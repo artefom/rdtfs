@@ -1,0 +1,2 @@
+route_id,agency_id,route_short_name,route_long_name,route_desc,route_type,route_url,route_color,route_text_color,route_sort_order,continuous_pickup,continuous_drop_off
+09c38790-a929-4cf7-a2c3-8c9dcfeb2aa8,agency-1,route-a,,,3,,FFFFFF,BBBBBB,,1,1
