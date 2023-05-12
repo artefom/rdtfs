@@ -9,6 +9,8 @@ use std::{
 };
 
 use anyhow::{bail, Result};
+use chrono::{Date, NaiveDate};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use uuid::Uuid;
@@ -89,6 +91,7 @@ pub struct Route {
     pub route_sort_order: Option<u32>,
     pub continuous_pickup: Option<ContinuousPickupType>,
     pub continuous_drop_off: Option<ContinuousDropOffType>,
+    pub ticketing_deep_link_id: Option<String>,
 }
 
 impl Route {
@@ -106,6 +109,7 @@ impl Route {
             route_sort_order: None,
             continuous_pickup: Some(ContinuousPickupType::NoContinuousStoppingPickup),
             continuous_drop_off: Some(ContinuousDropOffType::NoContinuousStoppingDropOff),
+            ticketing_deep_link_id: None,
         }
     }
 }
@@ -120,6 +124,7 @@ pub struct Agency {
     pub agency_phone: Option<String>,
     pub agency_fare_url: Option<String>,
     pub agency_email: Option<String>,
+    pub ticketing_deep_link_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
@@ -157,6 +162,310 @@ pub struct Stop {
     pub level_id: Option<String>,
     pub platform_code: Option<String>,
 }
+
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+pub enum TicketingType {
+    Available = 0,
+    Unavailable = 1,
+}
+
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+pub enum TripDirection {
+    Outbound = 0,
+    Inbound = 1,
+}
+
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+pub enum BikesAllowedType {
+    NoInformation = 0,
+    BikesAllowed = 1,
+    NoBikesAllowed = 2,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Trip {
+    pub route_id: String,
+    pub service_id: String,
+    pub trip_id: String,
+    pub trip_headsign: Option<String>,
+    pub trip_short_name: Option<String>,
+    pub direction_id: Option<TripDirection>,
+    pub block_id: Option<String>,
+    pub shape_id: Option<String>,
+    pub wheelchair_accessible: Option<WheelChairBoardingType>,
+    pub bikes_allowed: Option<BikesAllowedType>,
+    pub trip_ticketing_id: Option<String>,
+    pub ticketing_type: Option<TicketingType>,
+}
+
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+pub enum StopPickupType {
+    RegularPickup = 0,
+    NoPickup = 1,
+    PhoneAgency = 2,
+    AskDriver = 3,
+}
+
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+pub enum StopDropOffType {
+    RegularDropOff = 0,
+    NoDropOff = 1,
+    PhoneAgency = 2,
+    AskDriver = 3,
+}
+
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+pub enum TimePointType {
+    Aproximate = 0,
+    Exact = 1,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StopTime {
+    pub trip_id: String,
+    pub arrival_time: Option<String>,
+    pub departure_time: Option<String>,
+    pub stop_id: String,
+    pub stop_sequence: u64,
+    pub stop_headsign: Option<String>,
+    pub pickup_type: Option<StopPickupType>,
+    pub drop_off_type: Option<StopDropOffType>,
+    pub continuous_pickup: Option<ContinuousPickupType>,
+    pub continuous_drop_off: Option<ContinuousDropOffType>,
+    pub shape_dist_traveled: Option<f64>,
+    pub timepoint: Option<TimePointType>,
+    pub ticketing_type: Option<TicketingType>,
+}
+
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+pub enum ServiceAvailability {
+    SeriviceAvailable = 1,
+    SeriviceNotAvailable = 0,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Calendar {
+    service_id: String,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+    monday: ServiceAvailability,
+    tuesday: ServiceAvailability,
+    wednesday: ServiceAvailability,
+    thursday: ServiceAvailability,
+    friday: ServiceAvailability,
+    saturday: ServiceAvailability,
+    sunday: ServiceAvailability,
+}
+
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+pub enum SerivceExceptionType {
+    Added = 1,
+    Removed = 2,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CalendarDate {
+    service_id: String,
+    date: NaiveDate,
+    exception_type: SerivceExceptionType,
+}
+
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+pub enum PaymentMethod {
+    PaidOnBoard = 0,
+    PaidBeforeBoard = 1,
+}
+
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+pub enum TransfersIncluded {
+    NoTransfersPermitted = 0,
+    TransferOnce = 1,
+    TransferTwice = 2,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FareAttribute {
+    fare_id: String,
+    price: Decimal,
+    currency_type: String,
+    payment_method: PaymentMethod,
+    transfers: TransfersIncluded,
+    agency_id: Option<String>,
+    transfer_duration: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FareRule {
+    fare_id: String,
+    route_id: Option<String>,
+    origin_id: Option<String>,
+    destination_id: Option<String>,
+    contains_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Shape {
+    shape_id: String,
+    shape_pt_lat: f64,
+    shape_pt_lon: f64,
+    shape_pt_sequence: u64,
+    shape_dist_traveled: Option<f64>,
+}
+
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+enum ExactTimesType {
+    FrequencyBased = 0,
+    ExactSameHeadway = 1,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Frequency {
+    trip_id: String,
+    start_time: String,
+    end_time: String,
+    headway_secs: u64,
+    exact_times: Option<ExactTimesType>,
+}
+
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+enum TransferType {
+    Recommended = 0,
+    TimedTransfer = 1,
+    WaitForTransfer = 2,
+    TransferNotPossible = 3,
+    InSeatTransfer = 4,
+    ReboardTransfer = 5,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Transfer {
+    from_stop_id: String,
+    to_stop_id: String,
+    transfer_type: TransferType,
+    min_transfer_time: Option<u64>,
+}
+
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+enum PathwayMode {
+    Walkway = 1,
+    Stairs = 2,
+    Travelator = 3,
+    Escalator = 4,
+    Elevator = 5,
+    FareGate = 6,
+    ExitGate = 7,
+}
+
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+enum BidirectionalType {
+    Unidirectional = 0,
+    Bidirectional = 1,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PathWay {
+    pathway_id: String,
+    from_stop_id: String,
+    to_stop_id: String,
+    pathway_mode: PathwayMode,
+    is_bidirectional: BidirectionalType,
+    length: Option<f64>,
+    traversal_time: Option<u64>,
+    stair_count: Option<u64>,
+    max_slope: Option<f64>,
+    min_width: Option<f64>,
+    signposted_as: Option<String>,
+    reversed_signposted_as: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Level {
+    level_id: String,
+    level_index: f64,
+    level_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FeedInfo {
+    feed_publisher_name: String,
+    feed_publisher_url: String,
+    feed_lang: String,
+    default_lang: Option<String>,
+    feed_start_date: Option<NaiveDate>,
+    feed_end_date: Option<NaiveDate>,
+    feed_version: Option<String>,
+    feed_contact_email: Option<String>,
+    feed_contact_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+enum TableName {
+    #[serde(rename = "agency")]
+    Agency,
+    #[serde(rename = "stops")]
+    Stops,
+    #[serde(rename = "routes")]
+    Routes,
+    #[serde(rename = "trips")]
+    Trips,
+    #[serde(rename = "stop_times")]
+    StopTimes,
+    #[serde(rename = "feed_info")]
+    FeedInfo,
+    #[serde(rename = "pathways")]
+    Pathways,
+    #[serde(rename = "levels")]
+    Levels,
+    #[serde(rename = "attributions")]
+    Attributions,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Translation {
+    table_name: TableName,
+    field_name: String,
+    language: String,
+    translation: String,
+    record_id: Option<String>,
+    record_sub_id: Option<String>,
+    field_value: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Attribution {
+    attribution_id: Option<String>,
+    agency_id: Option<String>,
+    route_id: Option<String>,
+    trip_id: Option<String>,
+    organization_name: String,
+    is_producer: u8,
+    is_operator: u8,
+    is_authority: u8,
+    attribution_url: Option<String>,
+    attribution_email: Option<String>,
+    attribution_phone: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TicketingIdentifier {}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TicketingDeepLink {}
 
 struct GtfsFullRouteInfo {
     route: Route,
@@ -207,10 +516,20 @@ pub enum GtfsFileType {
     TicketingIdentifiers,
     FareAttributes,
     FareRules,
+    Shapes,
+    Frequencies,
+    Transfers,
+    Pathways,
+    Levels,
+    Translations,
+    Attributions,
 }
 
 pub trait GtfsStore {
-    fn get_readable<'a>(&'a mut self, file_type: GtfsFileType) -> BufReader<Box<dyn Read + 'a>>;
+    fn get_readable<'a>(
+        &'a mut self,
+        file_type: GtfsFileType,
+    ) -> Option<BufReader<Box<dyn Read + 'a>>>;
 }
 
 pub struct GtfsZipStore {
@@ -277,58 +596,277 @@ impl GtfsZipStore {
 }
 
 impl GtfsStore for GtfsZipStore {
-    fn get_readable<'a>(&'a mut self, file_type: GtfsFileType) -> BufReader<Box<dyn Read + 'a>> {
+    fn get_readable<'a>(
+        &'a mut self,
+        file_type: GtfsFileType,
+    ) -> Option<BufReader<Box<dyn Read + 'a>>> {
         let res = self
             .archive
             .by_name(self.file_name_mapping.get(&file_type).unwrap())
             .unwrap();
 
-        BufReader::new(Box::new(res))
+        Some(BufReader::new(Box::new(res)))
     }
 }
 
 pub struct GtfsCollection {
+    agency: BigAssTable<Agency>,
+    stops: BigAssTable<Stop>,
     routes: BigAssTable<Route>,
+    trips: BigAssTable<Trip>,
+    stop_times: BigAssTable<StopTime>,
+    calendar: Option<BigAssTable<Calendar>>,
+    calendar_dates: Option<BigAssTable<CalendarDate>>,
+    fare_attributes: Option<BigAssTable<FareAttribute>>,
+    fare_rules: Option<BigAssTable<FareRule>>,
+    shapes: Option<BigAssTable<Shape>>,
+    frequencies: Option<BigAssTable<Frequency>>,
+    transfers: Option<BigAssTable<Transfer>>,
+    pathways: Option<BigAssTable<PathWay>>,
+    levels: Option<BigAssTable<Level>>,
+    feed_info: Option<BigAssTable<FeedInfo>>,
+    translations: Option<BigAssTable<Translation>>,
+    attributions: Option<BigAssTable<Attribution>>,
+    ticketing_identifiers: Option<BigAssTable<TicketingIdentifier>>,
+    ticketing_deep_links: Option<BigAssTable<TicketingDeepLink>>,
 }
 
 impl GtfsCollection {
     /// Create gtfs collection from a readable store
-    pub fn from_store<T: GtfsStore>(store: &mut T) -> Self {
-        let mut routes: BigAssTable<Route> = BigAssTable::new();
-        let mut agencies: BigAssTable<Agency> = BigAssTable::new();
-        let mut stops: BigAssTable<Stop> = BigAssTable::new();
-
+    pub fn from_store<T: GtfsStore>(store: &mut T) -> Result<Self> {
         log::info!("Deserializing routes");
-        {
-            let file = store.get_readable(GtfsFileType::Routes);
-            let reader: CsvTableReader<Route, _> = CsvTableReader::new(file);
-            for obj in reader {
-                routes.push(obj)
-            }
-        }
 
-        log::info!("Deserializing agencies");
-        {
-            let file = store.get_readable(GtfsFileType::Agency);
+        let agency = if let Some(file) = store.get_readable(GtfsFileType::Agency) {
             let reader: CsvTableReader<Agency, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
             for obj in reader {
-                agencies.push(obj)
+                table.push(obj)
             }
-        }
+            table
+        } else {
+            bail!("Routes table not found in source")
+        };
 
-        log::info!("Deserializing stops");
-        {
-            let file = store.get_readable(GtfsFileType::Stops);
+        let stops = if let Some(file) = store.get_readable(GtfsFileType::Stops) {
             let reader: CsvTableReader<Stop, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
             for obj in reader {
-                stops.push(obj)
+                table.push(obj)
             }
-        }
+            table
+        } else {
+            bail!("Stops table not found in source")
+        };
 
-        log::info!("Number of routes: {}", routes.length());
-        log::info!("Number of agencies: {}", agencies.length());
-        log::info!("Number of stops: {}", stops.length());
+        let routes = if let Some(file) = store.get_readable(GtfsFileType::Routes) {
+            let reader: CsvTableReader<Route, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
+            for obj in reader {
+                table.push(obj)
+            }
+            table
+        } else {
+            bail!("Routes table not found in source")
+        };
 
-        GtfsCollection { routes: routes }
+        let trips = if let Some(file) = store.get_readable(GtfsFileType::Trips) {
+            let reader: CsvTableReader<Trip, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
+            for obj in reader {
+                table.push(obj)
+            }
+            table
+        } else {
+            bail!("Routes table not found in source")
+        };
+
+        let stop_times = if let Some(file) = store.get_readable(GtfsFileType::StopTimes) {
+            let reader: CsvTableReader<StopTime, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
+            for obj in reader {
+                table.push(obj)
+            }
+            table
+        } else {
+            bail!("Routes table not found in source")
+        };
+
+        let calendar = if let Some(file) = store.get_readable(GtfsFileType::Calendar) {
+            let reader: CsvTableReader<Calendar, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
+            for obj in reader {
+                table.push(obj)
+            }
+            Some(table)
+        } else {
+            None
+        };
+
+        let calendar_dates = if let Some(file) = store.get_readable(GtfsFileType::CalendarDates) {
+            let reader: CsvTableReader<CalendarDate, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
+            for obj in reader {
+                table.push(obj)
+            }
+            Some(table)
+        } else {
+            None
+        };
+
+        let fare_attributes = if let Some(file) = store.get_readable(GtfsFileType::FareAttributes) {
+            let reader: CsvTableReader<FareAttribute, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
+            for obj in reader {
+                table.push(obj)
+            }
+            Some(table)
+        } else {
+            None
+        };
+
+        let fare_rules = if let Some(file) = store.get_readable(GtfsFileType::FareRules) {
+            let reader: CsvTableReader<FareRule, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
+            for obj in reader {
+                table.push(obj)
+            }
+            Some(table)
+        } else {
+            None
+        };
+
+        let shapes = if let Some(file) = store.get_readable(GtfsFileType::Shapes) {
+            let reader: CsvTableReader<Shape, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
+            for obj in reader {
+                table.push(obj)
+            }
+            Some(table)
+        } else {
+            None
+        };
+
+        let frequencies = if let Some(file) = store.get_readable(GtfsFileType::Frequencies) {
+            let reader: CsvTableReader<Frequency, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
+            for obj in reader {
+                table.push(obj)
+            }
+            Some(table)
+        } else {
+            None
+        };
+
+        let transfers = if let Some(file) = store.get_readable(GtfsFileType::Transfers) {
+            let reader: CsvTableReader<Transfer, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
+            for obj in reader {
+                table.push(obj)
+            }
+            Some(table)
+        } else {
+            None
+        };
+
+        let pathways = if let Some(file) = store.get_readable(GtfsFileType::Pathways) {
+            let reader: CsvTableReader<PathWay, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
+            for obj in reader {
+                table.push(obj)
+            }
+            Some(table)
+        } else {
+            None
+        };
+
+        let levels = if let Some(file) = store.get_readable(GtfsFileType::Levels) {
+            let reader: CsvTableReader<Level, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
+            for obj in reader {
+                table.push(obj)
+            }
+            Some(table)
+        } else {
+            None
+        };
+
+        let feed_info = if let Some(file) = store.get_readable(GtfsFileType::FeedInfo) {
+            let reader: CsvTableReader<FeedInfo, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
+            for obj in reader {
+                table.push(obj)
+            }
+            Some(table)
+        } else {
+            None
+        };
+
+        let translations = if let Some(file) = store.get_readable(GtfsFileType::Translations) {
+            let reader: CsvTableReader<Translation, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
+            for obj in reader {
+                table.push(obj)
+            }
+            Some(table)
+        } else {
+            None
+        };
+
+        let attributions = if let Some(file) = store.get_readable(GtfsFileType::Attributions) {
+            let reader: CsvTableReader<Attribution, _> = CsvTableReader::new(file);
+            let mut table = BigAssTable::new();
+            for obj in reader {
+                table.push(obj)
+            }
+            Some(table)
+        } else {
+            None
+        };
+
+        let ticketing_identifier =
+            if let Some(file) = store.get_readable(GtfsFileType::TicketingIdentifiers) {
+                let reader: CsvTableReader<TicketingIdentifier, _> = CsvTableReader::new(file);
+                let mut table = BigAssTable::new();
+                for obj in reader {
+                    table.push(obj)
+                }
+                Some(table)
+            } else {
+                None
+            };
+
+        let ticketing_deep_links =
+            if let Some(file) = store.get_readable(GtfsFileType::TicketingDeepLinks) {
+                let reader: CsvTableReader<TicketingDeepLink, _> = CsvTableReader::new(file);
+                let mut table = BigAssTable::new();
+                for obj in reader {
+                    table.push(obj)
+                }
+                Some(table)
+            } else {
+                None
+            };
+
+        Ok(GtfsCollection {
+            agency: agency,
+            stops: stops,
+            routes: routes,
+            trips: trips,
+            stop_times: stop_times,
+            calendar: calendar,
+            calendar_dates: calendar_dates,
+            fare_attributes: fare_attributes,
+            fare_rules: fare_rules,
+            shapes: shapes,
+            frequencies: frequencies,
+            transfers: transfers,
+            pathways: pathways,
+            levels: levels,
+            feed_info: feed_info,
+            translations: translations,
+            attributions: attributions,
+            ticketing_identifiers: ticketing_identifier,
+            ticketing_deep_links: ticketing_deep_links,
+        })
     }
 }
