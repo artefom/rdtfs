@@ -9,7 +9,7 @@ use std::{
 };
 
 use anyhow::{bail, Result};
-use chrono::{Date, NaiveDate};
+use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -253,8 +253,8 @@ pub enum ServiceAvailability {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Calendar {
     service_id: String,
-    start_date: NaiveDate,
-    end_date: NaiveDate,
+    start_date: String,
+    end_date: String,
     monday: ServiceAvailability,
     tuesday: ServiceAvailability,
     wednesday: ServiceAvailability,
@@ -274,7 +274,7 @@ pub enum SerivceExceptionType {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CalendarDate {
     service_id: String,
-    date: NaiveDate,
+    date: String,
     exception_type: SerivceExceptionType,
 }
 
@@ -296,10 +296,10 @@ pub enum TransfersIncluded {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FareAttribute {
     fare_id: String,
-    price: Decimal,
+    price: f64,
     currency_type: String,
     payment_method: PaymentMethod,
-    transfers: TransfersIncluded,
+    transfers: Option<TransfersIncluded>,
     agency_id: Option<String>,
     transfer_duration: Option<u64>,
 }
@@ -405,8 +405,8 @@ pub struct FeedInfo {
     feed_publisher_url: String,
     feed_lang: String,
     default_lang: Option<String>,
-    feed_start_date: Option<NaiveDate>,
-    feed_end_date: Option<NaiveDate>,
+    feed_start_date: Option<String>,
+    feed_end_date: Option<String>,
     feed_version: Option<String>,
     feed_contact_email: Option<String>,
     feed_contact_url: Option<String>,
@@ -600,10 +600,11 @@ impl GtfsStore for GtfsZipStore {
         &'a mut self,
         file_type: GtfsFileType,
     ) -> Option<BufReader<Box<dyn Read + 'a>>> {
-        let res = self
-            .archive
-            .by_name(self.file_name_mapping.get(&file_type).unwrap())
-            .unwrap();
+        let Some(filename) = self.file_name_mapping.get(&file_type) else {
+            return None
+        };
+
+        let res = self.archive.by_name(filename).unwrap();
 
         Some(BufReader::new(Box::new(res)))
     }

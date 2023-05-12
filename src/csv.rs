@@ -1,4 +1,5 @@
 use std::{
+    any::type_name,
     collections::HashMap,
     fs::{File, OpenOptions},
     io::{self, BufRead, BufReader, BufWriter, Read, Write},
@@ -162,8 +163,8 @@ impl<D: DeserializeOwned, R: Read + BufRead> CsvTableReader<D, R> {
 
         let item: HashMap<&String, &String> = records.iter().zip(self.headers.iter()).collect();
 
-        let deserialized: D =
-            deserialize_item(&self.headers, &records).context("Could not deserialize item")?;
+        let deserialized: D = deserialize_item(&self.headers, &records)
+            .with_context(|| format!("Could not deserialize {}", type_name::<D>()))?;
 
         Ok(Some(deserialized))
     }
