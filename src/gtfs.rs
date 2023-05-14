@@ -635,9 +635,8 @@ pub struct GtfsCollection {
 impl GtfsCollection {
     /// Create gtfs collection from a readable store
     pub fn from_store<T: GtfsStore>(store: &mut T) -> Result<Self> {
-        log::info!("Deserializing routes");
-
         let agency = if let Some(file) = store.get_readable(GtfsFileType::Agency) {
+            log::info!("Reading agencies");
             let reader: CsvTableReader<Agency, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -645,10 +644,11 @@ impl GtfsCollection {
             }
             table
         } else {
-            bail!("Routes table not found in source")
+            bail!("Agencies table not found in source")
         };
 
         let stops = if let Some(file) = store.get_readable(GtfsFileType::Stops) {
+            log::info!("Reading stops");
             let reader: CsvTableReader<Stop, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -660,6 +660,7 @@ impl GtfsCollection {
         };
 
         let routes = if let Some(file) = store.get_readable(GtfsFileType::Routes) {
+            log::info!("Reading routes");
             let reader: CsvTableReader<Route, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -671,6 +672,7 @@ impl GtfsCollection {
         };
 
         let trips = if let Some(file) = store.get_readable(GtfsFileType::Trips) {
+            log::info!("Reading trips");
             let reader: CsvTableReader<Trip, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -682,6 +684,7 @@ impl GtfsCollection {
         };
 
         let stop_times = if let Some(file) = store.get_readable(GtfsFileType::StopTimes) {
+            log::info!("Reading stop times");
             let reader: CsvTableReader<StopTime, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -693,6 +696,7 @@ impl GtfsCollection {
         };
 
         let calendar = if let Some(file) = store.get_readable(GtfsFileType::Calendar) {
+            log::info!("Reading calendar");
             let reader: CsvTableReader<Calendar, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -704,6 +708,7 @@ impl GtfsCollection {
         };
 
         let calendar_dates = if let Some(file) = store.get_readable(GtfsFileType::CalendarDates) {
+            log::info!("Reading calendar dates");
             let reader: CsvTableReader<CalendarDate, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -715,6 +720,7 @@ impl GtfsCollection {
         };
 
         let fare_attributes = if let Some(file) = store.get_readable(GtfsFileType::FareAttributes) {
+            log::info!("Reading fare attributes");
             let reader: CsvTableReader<FareAttribute, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -726,6 +732,7 @@ impl GtfsCollection {
         };
 
         let fare_rules = if let Some(file) = store.get_readable(GtfsFileType::FareRules) {
+            log::info!("Reading fare rules");
             let reader: CsvTableReader<FareRule, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -737,6 +744,7 @@ impl GtfsCollection {
         };
 
         let shapes = if let Some(file) = store.get_readable(GtfsFileType::Shapes) {
+            log::info!("Reading shapes");
             let reader: CsvTableReader<Shape, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -748,6 +756,7 @@ impl GtfsCollection {
         };
 
         let frequencies = if let Some(file) = store.get_readable(GtfsFileType::Frequencies) {
+            log::info!("Reading frequencies");
             let reader: CsvTableReader<Frequency, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -759,6 +768,7 @@ impl GtfsCollection {
         };
 
         let transfers = if let Some(file) = store.get_readable(GtfsFileType::Transfers) {
+            log::info!("Reading transfers");
             let reader: CsvTableReader<Transfer, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -770,6 +780,7 @@ impl GtfsCollection {
         };
 
         let pathways = if let Some(file) = store.get_readable(GtfsFileType::Pathways) {
+            log::info!("Reading pathways");
             let reader: CsvTableReader<PathWay, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -781,6 +792,7 @@ impl GtfsCollection {
         };
 
         let levels = if let Some(file) = store.get_readable(GtfsFileType::Levels) {
+            log::info!("Reading levels");
             let reader: CsvTableReader<Level, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -792,6 +804,7 @@ impl GtfsCollection {
         };
 
         let feed_info = if let Some(file) = store.get_readable(GtfsFileType::FeedInfo) {
+            log::info!("Reading feed info");
             let reader: CsvTableReader<FeedInfo, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -803,6 +816,7 @@ impl GtfsCollection {
         };
 
         let translations = if let Some(file) = store.get_readable(GtfsFileType::Translations) {
+            log::info!("Reading translations");
             let reader: CsvTableReader<Translation, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -814,6 +828,7 @@ impl GtfsCollection {
         };
 
         let attributions = if let Some(file) = store.get_readable(GtfsFileType::Attributions) {
+            log::info!("Reading attributions");
             let reader: CsvTableReader<Attribution, _> = CsvTableReader::new(file);
             let mut table = BigAssTable::new();
             for obj in reader {
@@ -826,6 +841,7 @@ impl GtfsCollection {
 
         let ticketing_identifier =
             if let Some(file) = store.get_readable(GtfsFileType::TicketingIdentifiers) {
+                log::info!("Reading ticketing identifiers");
                 let reader: CsvTableReader<TicketingIdentifier, _> = CsvTableReader::new(file);
                 let mut table = BigAssTable::new();
                 for obj in reader {
@@ -838,6 +854,7 @@ impl GtfsCollection {
 
         let ticketing_deep_links =
             if let Some(file) = store.get_readable(GtfsFileType::TicketingDeepLinks) {
+                log::info!("Reading ticketing deep links");
                 let reader: CsvTableReader<TicketingDeepLink, _> = CsvTableReader::new(file);
                 let mut table = BigAssTable::new();
                 for obj in reader {
