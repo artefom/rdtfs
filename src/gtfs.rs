@@ -1,3 +1,5 @@
+/// Module for reading gtfs collection
+///
 use std::{
     borrow::Borrow,
     cell::{Ref, RefCell},
