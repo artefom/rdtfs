@@ -2,21 +2,29 @@ use std::{
     borrow::Borrow,
     cell::{Ref, RefCell},
     collections::HashMap,
+    fmt::Display,
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Read, Seek},
     marker::PhantomData,
     path::Path,
+    time::{Duration, Instant},
 };
 
 use anyhow::{bail, Result};
 use chrono::NaiveDate;
+use indicatif::{ProgressBar, ProgressStyle};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde_json::value;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use uuid::Uuid;
 use zip::{read::ZipFile, ZipArchive};
 
 use crate::csv::CsvTableReader;
+
+pub trait GtfsFile {
+    fn get_file_type() -> GtfsFileType;
+}
 
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
@@ -114,6 +122,12 @@ impl Route {
     }
 }
 
+impl GtfsFile for Route {
+    fn get_file_type() -> GtfsFileType {
+        return GtfsFileType::Routes;
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Agency {
     pub agency_id: String,
@@ -125,6 +139,12 @@ pub struct Agency {
     pub agency_fare_url: Option<String>,
     pub agency_email: Option<String>,
     pub ticketing_deep_link_id: Option<String>,
+}
+
+impl GtfsFile for Agency {
+    fn get_file_type() -> GtfsFileType {
+        return GtfsFileType::Agencies;
+    }
 }
 
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
@@ -163,6 +183,12 @@ pub struct Stop {
     pub platform_code: Option<String>,
 }
 
+impl GtfsFile for Stop {
+    fn get_file_type() -> GtfsFileType {
+        return GtfsFileType::Stops;
+    }
+}
+
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 pub enum TicketingType {
@@ -199,6 +225,12 @@ pub struct Trip {
     pub bikes_allowed: Option<BikesAllowedType>,
     pub trip_ticketing_id: Option<String>,
     pub ticketing_type: Option<TicketingType>,
+}
+
+impl GtfsFile for Trip {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::Trips
+    }
 }
 
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
@@ -243,6 +275,12 @@ pub struct StopTime {
     pub ticketing_type: Option<TicketingType>,
 }
 
+impl GtfsFile for StopTime {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::StopTimes
+    }
+}
+
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 pub enum ServiceAvailability {
@@ -264,6 +302,12 @@ pub struct Calendar {
     sunday: ServiceAvailability,
 }
 
+impl GtfsFile for Calendar {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::Calendars
+    }
+}
+
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
 pub enum SerivceExceptionType {
@@ -276,6 +320,12 @@ pub struct CalendarDate {
     service_id: String,
     date: String,
     exception_type: SerivceExceptionType,
+}
+
+impl GtfsFile for CalendarDate {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::CalendarDates
+    }
 }
 
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
@@ -304,6 +354,12 @@ pub struct FareAttribute {
     transfer_duration: Option<u64>,
 }
 
+impl GtfsFile for FareAttribute {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::FareAttributes
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FareRule {
     fare_id: String,
@@ -313,6 +369,12 @@ pub struct FareRule {
     contains_id: Option<String>,
 }
 
+impl GtfsFile for FareRule {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::FareRules
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Shape {
     shape_id: String,
@@ -320,6 +382,12 @@ pub struct Shape {
     shape_pt_lon: f64,
     shape_pt_sequence: u64,
     shape_dist_traveled: Option<f64>,
+}
+
+impl GtfsFile for Shape {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::Shapes
+    }
 }
 
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
@@ -336,6 +404,12 @@ pub struct Frequency {
     end_time: String,
     headway_secs: u64,
     exact_times: Option<ExactTimesType>,
+}
+
+impl GtfsFile for Frequency {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::Frequencies
+    }
 }
 
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
@@ -355,6 +429,12 @@ pub struct Transfer {
     to_stop_id: String,
     transfer_type: TransferType,
     min_transfer_time: Option<u64>,
+}
+
+impl GtfsFile for Transfer {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::Transfers
+    }
 }
 
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
@@ -392,11 +472,23 @@ pub struct PathWay {
     reversed_signposted_as: Option<String>,
 }
 
+impl GtfsFile for PathWay {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::Pathways
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Level {
     level_id: String,
     level_index: f64,
     level_name: Option<String>,
+}
+
+impl GtfsFile for Level {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::Levels
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -410,6 +502,12 @@ pub struct FeedInfo {
     feed_version: Option<String>,
     feed_contact_email: Option<String>,
     feed_contact_url: Option<String>,
+}
+
+impl GtfsFile for FeedInfo {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::FeedInfos
+    }
 }
 
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
@@ -446,6 +544,12 @@ pub struct Translation {
     field_value: Option<String>,
 }
 
+impl GtfsFile for Translation {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::Translations
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Attribution {
     attribution_id: Option<String>,
@@ -461,11 +565,38 @@ pub struct Attribution {
     attribution_phone: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TicketingIdentifier {}
+impl GtfsFile for Attribution {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::Attributions
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct TicketingDeepLink {}
+pub struct TicketingIdentifier {
+    ticketing_stop_id: String,
+    stop_id: String,
+    agency_id: String,
+}
+
+impl GtfsFile for TicketingIdentifier {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::TicketingIdentifiers
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TicketingDeepLink {
+    ticketing_deep_link_id: String,
+    web_url: Option<String>,
+    android_intent_uri: Option<String>,
+    ios_universal_link_url: Option<String>,
+}
+
+impl GtfsFile for TicketingDeepLink {
+    fn get_file_type() -> GtfsFileType {
+        GtfsFileType::TicketingDeepLinks
+    }
+}
 
 struct GtfsFullRouteInfo {
     route: Route,
@@ -480,37 +611,15 @@ impl GtfsWriter {
     }
 }
 
-struct BigAssTable<T> {
-    count: usize,
-    _phantom: PhantomData<T>,
-}
-
-impl<T> BigAssTable<T> {
-    pub fn new() -> Self {
-        BigAssTable {
-            count: 0,
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn push(&mut self, data: T) {
-        self.count += 1
-    }
-
-    pub fn length(&self) -> usize {
-        self.count
-    }
-}
-
 #[derive(Eq, Hash, PartialEq, Clone, Copy)]
 pub enum GtfsFileType {
-    Agency,
-    FeedInfo,
+    Agencies,
+    FeedInfos,
     Stops,
     Routes,
     Trips,
     StopTimes,
-    Calendar,
+    Calendars,
     CalendarDates,
     TicketingDeepLinks,
     TicketingIdentifiers,
@@ -525,37 +634,103 @@ pub enum GtfsFileType {
     Attributions,
 }
 
+impl GtfsFileType {
+    fn file_name(&self) -> &str {
+        use GtfsFileType::*;
+        match self {
+            Agencies => "agency",
+            FeedInfos => "feed_info",
+            Stops => "stops",
+            Routes => "routes",
+            Trips => "trips",
+            StopTimes => "stop_times",
+            Calendars => "calendar",
+            CalendarDates => "calendar_dates",
+            TicketingDeepLinks => "ticketing_deep_links",
+            TicketingIdentifiers => "ticketing_identifiers",
+            FareAttributes => "fare_attributes",
+            FareRules => "fare_rules",
+            Shapes => "shapes",
+            Frequencies => "frequencies",
+            Transfers => "transfers",
+            Pathways => "pathways",
+            Levels => "levels",
+            Translations => "translations",
+            Attributions => "attributions",
+        }
+    }
+
+    fn from_filename(name: &str) -> Option<Self> {
+        use GtfsFileType::*;
+        Some(match name {
+            "agency" => Agencies,
+            "feed_info" => FeedInfos,
+            "stops" => Stops,
+            "routes" => Routes,
+            "trips" => Trips,
+            "stop_times" => StopTimes,
+            "calendar" => Calendars,
+            "calendar_dates" => CalendarDates,
+            "ticketing_deep_links" => TicketingDeepLinks,
+            "ticketing_identifiers" => TicketingIdentifiers,
+            "fare_attributes" => FareAttributes,
+            "fare_rules" => FareRules,
+            "shapes" => Shapes,
+            "frequencies" => Frequencies,
+            "transfers" => Transfers,
+            "pathways" => Pathways,
+            "levels" => Levels,
+            "translations" => Translations,
+            "attributions" => Attributions,
+            _ => {
+                log::warn!("Unkown filename: {}", name);
+                return None;
+            }
+        })
+    }
+}
+
 pub trait GtfsStore {
-    fn get_readable<'a>(
-        &'a mut self,
-        file_type: GtfsFileType,
-    ) -> Option<BufReader<Box<dyn Read + 'a>>>;
+    fn get_readable<'a>(&'a mut self, file_type: GtfsFileType) -> Option<Box<dyn BufRead + 'a>>;
+
+    fn decompress<'a, I: DeserializeOwned + GtfsFile + 'static, F: TableFacory>(
+        &mut self,
+    ) -> Result<Box<dyn Pushable<I>>> {
+        let file_type = I::get_file_type();
+        let read = self.get_readable(file_type);
+
+        let Some(read) = read else {
+            bail!("File {} not found", file_type.file_name())
+        };
+        println!("Decompressing {}", file_type.file_name());
+        let reader: CsvTableReader<I, _> = CsvTableReader::new(read);
+        let mut table = F::new();
+        for obj in reader {
+            table.push(obj)
+        }
+        println!("  Found {} items", table.length());
+        Ok(table)
+    }
+
+    fn try_decompress<'a, I: DeserializeOwned + GtfsFile + 'static, F: TableFacory>(
+        &mut self,
+    ) -> Option<Box<dyn Pushable<I>>> {
+        match self.decompress::<I, F>() {
+            Ok(value) => Some(value),
+            Err(value) => None,
+        }
+    }
 }
 
 pub struct GtfsZipStore {
-    archive: ZipArchive<BufReader<File>>,
+    archive: ZipArchive<File>,
     file_name_mapping: HashMap<GtfsFileType, String>,
 }
 
 fn file_name_to_type(name: &str) -> Option<GtfsFileType> {
     // Remove extension
     let file_name: &str = &Path::new(name).file_stem().unwrap().to_string_lossy();
-    let file_type = match file_name {
-        "agency" => GtfsFileType::Agency,
-        "feed_info" => GtfsFileType::FeedInfo,
-        "stops" => GtfsFileType::Stops,
-        "routes" => GtfsFileType::Routes,
-        "trips" => GtfsFileType::Trips,
-        "stop_times" => GtfsFileType::StopTimes,
-        "calendar" => GtfsFileType::Calendar,
-        "calendar_dates" => GtfsFileType::CalendarDates,
-        "ticketing_deep_links" => GtfsFileType::TicketingDeepLinks,
-        "ticketing_identifiers" => GtfsFileType::TicketingIdentifiers,
-        "fare_attributes" => GtfsFileType::FareAttributes,
-        "fare_rules" => GtfsFileType::FareRules,
-        _ => return None,
-    };
-    Some(file_type)
+    GtfsFileType::from_filename(file_name)
 }
 
 /// Retrieve file intexes for each of the gtfs file types
@@ -579,12 +754,59 @@ fn get_file_names<'a, R: Read + Seek>(
     Ok(mapping)
 }
 
+/// Reads data and reports progress
+struct ProgressReader<F> {
+    consumed: u64,
+    file: F,
+    bar: ProgressBar,
+}
+
+impl<F> ProgressReader<F> {
+    fn new(file: F, total_size: u64) -> Self {
+        let progress = ProgressBar::new(total_size);
+
+        progress.set_style(
+            ProgressStyle::with_template(
+                "{bar:40.cyan/blue} {bytes:>7}/{total_bytes:7} {binary_bytes_per_sec} [ETA: {eta}] {msg}",
+            )
+            .unwrap()
+            .progress_chars("##-"),
+        );
+
+        ProgressReader {
+            consumed: 0,
+            file,
+            bar: progress,
+        }
+    }
+}
+
+impl<F: Read> Read for ProgressReader<F> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.file.read(buf)
+    }
+}
+
+impl<F: BufRead> BufRead for ProgressReader<F> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        self.file.fill_buf()
+    }
+
+    fn consume(&mut self, amt: usize) {
+        match TryInto::<u64>::try_into(amt) {
+            Ok(value) => self.bar.inc(value),
+            Err(_) => self.bar.inc(u64::MAX),
+        };
+
+        self.file.consume(amt);
+    }
+}
+
 impl GtfsZipStore {
     pub fn from_file(path: &str) -> Self {
         let file = OpenOptions::new().read(true).open(path).unwrap();
-        let reader = BufReader::new(file);
 
-        let mut archive = zip::ZipArchive::new(reader).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
 
         let file_name_mapping = get_file_names(&mut archive).unwrap();
 
@@ -596,295 +818,123 @@ impl GtfsZipStore {
 }
 
 impl GtfsStore for GtfsZipStore {
-    fn get_readable<'a>(
-        &'a mut self,
-        file_type: GtfsFileType,
-    ) -> Option<BufReader<Box<dyn Read + 'a>>> {
+    fn get_readable<'a>(&'a mut self, file_type: GtfsFileType) -> Option<Box<dyn BufRead + 'a>> {
         let Some(filename) = self.file_name_mapping.get(&file_type) else {
             return None
         };
 
         let res = self.archive.by_name(filename).unwrap();
 
-        Some(BufReader::new(Box::new(res)))
+        let total_size = res.size();
+
+        let progress_reader = Box::new(ProgressReader::new(BufReader::new(res), total_size));
+
+        Some(progress_reader)
     }
 }
 
+pub trait Pushable<I> {
+    fn push(&mut self, item: I);
+    fn length(&self) -> usize;
+}
+
+pub trait TableFacory {
+    fn new<I: 'static>() -> Box<dyn Pushable<I>>;
+}
+
 pub struct GtfsCollection {
-    agency: BigAssTable<Agency>,
-    stops: BigAssTable<Stop>,
-    routes: BigAssTable<Route>,
-    trips: BigAssTable<Trip>,
-    stop_times: BigAssTable<StopTime>,
-    calendar: Option<BigAssTable<Calendar>>,
-    calendar_dates: Option<BigAssTable<CalendarDate>>,
-    fare_attributes: Option<BigAssTable<FareAttribute>>,
-    fare_rules: Option<BigAssTable<FareRule>>,
-    shapes: Option<BigAssTable<Shape>>,
-    frequencies: Option<BigAssTable<Frequency>>,
-    transfers: Option<BigAssTable<Transfer>>,
-    pathways: Option<BigAssTable<PathWay>>,
-    levels: Option<BigAssTable<Level>>,
-    feed_info: Option<BigAssTable<FeedInfo>>,
-    translations: Option<BigAssTable<Translation>>,
-    attributions: Option<BigAssTable<Attribution>>,
-    ticketing_identifiers: Option<BigAssTable<TicketingIdentifier>>,
-    ticketing_deep_links: Option<BigAssTable<TicketingDeepLink>>,
+    agency: Box<dyn Pushable<Agency>>,
+    stops: Box<dyn Pushable<Stop>>,
+    routes: Box<dyn Pushable<Route>>,
+    trips: Box<dyn Pushable<Trip>>,
+    stop_times: Box<dyn Pushable<StopTime>>,
+    calendar: Option<Box<dyn Pushable<Calendar>>>,
+    calendar_dates: Option<Box<dyn Pushable<CalendarDate>>>,
+    fare_attributes: Option<Box<dyn Pushable<FareAttribute>>>,
+    fare_rules: Option<Box<dyn Pushable<FareRule>>>,
+    shapes: Option<Box<dyn Pushable<Shape>>>,
+    frequencies: Option<Box<dyn Pushable<Frequency>>>,
+    transfers: Option<Box<dyn Pushable<Transfer>>>,
+    pathways: Option<Box<dyn Pushable<PathWay>>>,
+    levels: Option<Box<dyn Pushable<Level>>>,
+    feed_info: Option<Box<dyn Pushable<FeedInfo>>>,
+    translations: Option<Box<dyn Pushable<Translation>>>,
+    attributions: Option<Box<dyn Pushable<Attribution>>>,
+    ticketing_identifiers: Option<Box<dyn Pushable<TicketingIdentifier>>>,
+    ticketing_deep_links: Option<Box<dyn Pushable<TicketingDeepLink>>>,
+}
+
+fn decompress<'a, I: DeserializeOwned + 'static, F: TableFacory>(
+    read: Option<Box<dyn BufRead + 'a>>,
+) -> Result<Box<dyn Pushable<I>>> {
+    let Some(read) = read else {
+        bail!("File not found")
+    };
+    log::info!("Decompressing items");
+    let reader: CsvTableReader<I, _> = CsvTableReader::new(read);
+    let mut table = F::new();
+    for obj in reader {
+        table.push(obj)
+    }
+    log::info!("Found {} items", table.length());
+    Ok(table)
+}
+
+fn try_decompress<'a, I: DeserializeOwned + 'static, F: TableFacory>(
+    read: Option<Box<dyn BufRead + 'a>>,
+) -> Option<Box<dyn Pushable<I>>> {
+    match decompress::<I, F>(read) {
+        Ok(value) => Some(value),
+        Err(value) => None,
+    }
 }
 
 impl GtfsCollection {
     /// Create gtfs collection from a readable store
-    pub fn from_store<T: GtfsStore>(store: &mut T) -> Result<Self> {
-        let agency = if let Some(file) = store.get_readable(GtfsFileType::Agency) {
-            log::info!("Reading agencies");
-            let reader: CsvTableReader<Agency, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            table
-        } else {
-            bail!("Agencies table not found in source")
-        };
+    pub fn from_store<T: GtfsStore, F: TableFacory>(store: &mut T) -> Result<Self> {
+        use GtfsFileType::*;
 
-        let stops = if let Some(file) = store.get_readable(GtfsFileType::Stops) {
-            log::info!("Reading stops");
-            let reader: CsvTableReader<Stop, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            table
-        } else {
-            bail!("Stops table not found in source")
-        };
-
-        let routes = if let Some(file) = store.get_readable(GtfsFileType::Routes) {
-            log::info!("Reading routes");
-            let reader: CsvTableReader<Route, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            table
-        } else {
-            bail!("Routes table not found in source")
-        };
-
-        let trips = if let Some(file) = store.get_readable(GtfsFileType::Trips) {
-            log::info!("Reading trips");
-            let reader: CsvTableReader<Trip, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            table
-        } else {
-            bail!("Routes table not found in source")
-        };
-
-        let stop_times = if let Some(file) = store.get_readable(GtfsFileType::StopTimes) {
-            log::info!("Reading stop times");
-            let reader: CsvTableReader<StopTime, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            table
-        } else {
-            bail!("Routes table not found in source")
-        };
-
-        let calendar = if let Some(file) = store.get_readable(GtfsFileType::Calendar) {
-            log::info!("Reading calendar");
-            let reader: CsvTableReader<Calendar, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            Some(table)
-        } else {
-            None
-        };
-
-        let calendar_dates = if let Some(file) = store.get_readable(GtfsFileType::CalendarDates) {
-            log::info!("Reading calendar dates");
-            let reader: CsvTableReader<CalendarDate, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            Some(table)
-        } else {
-            None
-        };
-
-        let fare_attributes = if let Some(file) = store.get_readable(GtfsFileType::FareAttributes) {
-            log::info!("Reading fare attributes");
-            let reader: CsvTableReader<FareAttribute, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            Some(table)
-        } else {
-            None
-        };
-
-        let fare_rules = if let Some(file) = store.get_readable(GtfsFileType::FareRules) {
-            log::info!("Reading fare rules");
-            let reader: CsvTableReader<FareRule, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            Some(table)
-        } else {
-            None
-        };
-
-        let shapes = if let Some(file) = store.get_readable(GtfsFileType::Shapes) {
-            log::info!("Reading shapes");
-            let reader: CsvTableReader<Shape, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            Some(table)
-        } else {
-            None
-        };
-
-        let frequencies = if let Some(file) = store.get_readable(GtfsFileType::Frequencies) {
-            log::info!("Reading frequencies");
-            let reader: CsvTableReader<Frequency, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            Some(table)
-        } else {
-            None
-        };
-
-        let transfers = if let Some(file) = store.get_readable(GtfsFileType::Transfers) {
-            log::info!("Reading transfers");
-            let reader: CsvTableReader<Transfer, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            Some(table)
-        } else {
-            None
-        };
-
-        let pathways = if let Some(file) = store.get_readable(GtfsFileType::Pathways) {
-            log::info!("Reading pathways");
-            let reader: CsvTableReader<PathWay, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            Some(table)
-        } else {
-            None
-        };
-
-        let levels = if let Some(file) = store.get_readable(GtfsFileType::Levels) {
-            log::info!("Reading levels");
-            let reader: CsvTableReader<Level, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            Some(table)
-        } else {
-            None
-        };
-
-        let feed_info = if let Some(file) = store.get_readable(GtfsFileType::FeedInfo) {
-            log::info!("Reading feed info");
-            let reader: CsvTableReader<FeedInfo, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            Some(table)
-        } else {
-            None
-        };
-
-        let translations = if let Some(file) = store.get_readable(GtfsFileType::Translations) {
-            log::info!("Reading translations");
-            let reader: CsvTableReader<Translation, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            Some(table)
-        } else {
-            None
-        };
-
-        let attributions = if let Some(file) = store.get_readable(GtfsFileType::Attributions) {
-            log::info!("Reading attributions");
-            let reader: CsvTableReader<Attribution, _> = CsvTableReader::new(file);
-            let mut table = BigAssTable::new();
-            for obj in reader {
-                table.push(obj)
-            }
-            Some(table)
-        } else {
-            None
-        };
-
-        let ticketing_identifier =
-            if let Some(file) = store.get_readable(GtfsFileType::TicketingIdentifiers) {
-                log::info!("Reading ticketing identifiers");
-                let reader: CsvTableReader<TicketingIdentifier, _> = CsvTableReader::new(file);
-                let mut table = BigAssTable::new();
-                for obj in reader {
-                    table.push(obj)
-                }
-                Some(table)
-            } else {
-                None
-            };
-
-        let ticketing_deep_links =
-            if let Some(file) = store.get_readable(GtfsFileType::TicketingDeepLinks) {
-                log::info!("Reading ticketing deep links");
-                let reader: CsvTableReader<TicketingDeepLink, _> = CsvTableReader::new(file);
-                let mut table = BigAssTable::new();
-                for obj in reader {
-                    table.push(obj)
-                }
-                Some(table)
-            } else {
-                None
-            };
+        // let agency = decompress::<Agency, F>(store.get_readable(GtfsFileType::Agencies))?;
+        let agency = store.decompress::<Agency, F>()?;
+        let stops = store.decompress::<Stop, F>()?;
+        let routes = store.decompress::<Route, F>()?;
+        let trips = store.decompress::<Trip, F>()?;
+        let stop_times = store.decompress::<StopTime, F>()?;
+        let calendar = store.try_decompress::<Calendar, F>();
+        let calendar_dates = store.try_decompress::<CalendarDate, F>();
+        let fare_attributes = store.try_decompress::<FareAttribute, F>();
+        let fare_rules = store.try_decompress::<FareRule, F>();
+        let shapes = store.try_decompress::<Shape, F>();
+        let frequencies = store.try_decompress::<Frequency, F>();
+        let transfers = store.try_decompress::<Transfer, F>();
+        let pathways = store.try_decompress::<PathWay, F>();
+        let levels = store.try_decompress::<Level, F>();
+        let feed_info = store.try_decompress::<FeedInfo, F>();
+        let translations = store.try_decompress::<Translation, F>();
+        let attributions = store.try_decompress::<Attribution, F>();
+        let ticketing_identifiers = store.try_decompress::<TicketingIdentifier, F>();
+        let ticketing_deep_links = store.try_decompress::<TicketingDeepLink, F>();
 
         Ok(GtfsCollection {
-            agency: agency,
-            stops: stops,
-            routes: routes,
-            trips: trips,
-            stop_times: stop_times,
-            calendar: calendar,
-            calendar_dates: calendar_dates,
-            fare_attributes: fare_attributes,
-            fare_rules: fare_rules,
-            shapes: shapes,
-            frequencies: frequencies,
-            transfers: transfers,
-            pathways: pathways,
-            levels: levels,
-            feed_info: feed_info,
-            translations: translations,
-            attributions: attributions,
-            ticketing_identifiers: ticketing_identifier,
-            ticketing_deep_links: ticketing_deep_links,
+            agency,
+            stops,
+            routes,
+            trips,
+            stop_times,
+            calendar,
+            calendar_dates,
+            fare_attributes,
+            fare_rules,
+            shapes,
+            frequencies,
+            transfers,
+            pathways,
+            levels,
+            feed_info,
+            translations,
+            attributions,
+            ticketing_identifiers,
+            ticketing_deep_links,
         })
     }
 }

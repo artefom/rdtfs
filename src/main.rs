@@ -15,10 +15,11 @@ use base64::{
     engine::{general_purpose, GeneralPurpose},
     Engine,
 };
+use bigasstable::BigAssTable;
 use clap::builder::OsStr;
 use csv::{from_file, CsvTableReader};
 use datastore::Table;
-use gtfs::{GtfsZipStore, GtfsCollection};
+use gtfs::{GtfsCollection, GtfsZipStore, Pushable, TableFacory};
 use serde::Serialize;
 use xbus::{EsTrips, StationTimezoneGetter, TripsHit};
 
@@ -38,6 +39,8 @@ mod xbus;
 mod masterdata;
 
 mod csv;
+
+mod bigasstable;
 
 impl StationTimezoneGetter for Masterdata {
     fn get_station_timezone(&self, station_code: &str) -> Option<&chrono_tz::Tz> {
@@ -228,10 +231,30 @@ fn write_connections<'a, I: IntoIterator<Item = &'a gtfs::Route>>(routes: I) {
 //     // mapping
 // }
 
-async fn async_main() -> Result<()> {
-    let mut gtfs_store = GtfsZipStore::from_file("/Users/artef/dev/dtfs/local/CATA.gtfs.txt.zip");
+struct BigAssTableFactory {}
 
-    let gtfs_collection = GtfsCollection::from_store(&mut gtfs_store);
+impl<I> Pushable<I> for BigAssTable<I> {
+    fn push(&mut self, item: I) {
+        BigAssTable::push(self, item);
+    }
+
+    fn length(&self) -> usize {
+        BigAssTable::length(self)
+    }
+}
+
+impl TableFacory for BigAssTableFactory {
+    fn new<I: 'static>() -> Box<dyn gtfs::Pushable<I>> {
+        Box::new(BigAssTable::<I>::new())
+    }
+}
+
+async fn async_main() -> Result<()> {
+    let mut gtfs_store =
+        GtfsZipStore::from_file("/Users/artef/Downloads/ntra_import_latest_ntra-in.gtfs.txt.zip");
+    // let mut gtfs_store = GtfsZipStore::from_file("/Users/artef/dev/dtfs/local/CATA.gtfs.txt.zip");
+
+    let gtfs_collection = GtfsCollection::from_store::<_, BigAssTableFactory>(&mut gtfs_store);
 
     // read_zip("/Users/artef/dev/dtfs/local/CATA.gtfs.txt.zip");
 
