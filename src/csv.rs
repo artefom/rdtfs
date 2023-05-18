@@ -78,12 +78,6 @@ impl<S: Serialize> CsvTableWriter<S> {
 
             let first_line = String::new();
             todo!()
-            // Some(
-            //     parse_csv_line(&first_line)
-            //         .iter()
-            //         .map(|x| x.to_string())
-            //         .collect(),
-            // )
         } else {
             None
         };
@@ -150,24 +144,9 @@ impl<R: Read + BufRead> CsvTableReader<R> {
         CsvTableReader { reader, headers }
     }
 
-    // fn deserialize_one<'de, F: FnMut(D) -> (), D: Deserialize<'de>>(
-    //     headers: &HashMap<String, usize>,
-    //     data: &'de str,
-    //     divisions: &Vec<FieldReference>,
-    //     mut callable: F,
-    // ) {
-
-    //     let deserialized: D = deserialize_item(headers, divisions, data)
-    //         .with_context(|| format!("Could not deserialize {}", type_name::<D>()))
-    //         .unwrap();
-    //     callable(deserialized)
-    // }
-
     /// Map all rows from the file
     pub fn map<F: FnMut(D) -> (), D: DeserializeOwned>(&mut self, mut callable: F) -> Result<()> {
         // Read line into buffer and return if 0 bytes were read
-        // todo!();
-
         let mut line_buf = String::new();
         let mut field_buf: Vec<FieldReference> = Vec::new();
 
@@ -189,31 +168,5 @@ impl<R: Read + BufRead> CsvTableReader<R> {
                 Err(error) => log::error!("Error deserializing: {error}"),
             }
         }
-
-        // loop {
-        //     self.line_buf.clear();
-        //     // let num_read = self.reader.read_line((*self).line_buf).unwrap();
-        //     // if num_read == 0 {
-        //     //     return Ok(());
-        //     // };
-
-        //     {
-        //         parse_csv_line(self.line_buf, self.field_buf);
-        //         Self::deserialize_to_function(
-        //             &self.headers,
-        //             &self.line_buf,
-        //             &self.field_buf,
-        //             &mut callable,
-        //         );
-
-        //         // let deserialized: D =
-        //         //     deserialize_item(&self.headers, self.field_buf, &self.line_buf)
-        //         //         .with_context(|| format!("Could not deserialize {}", type_name::<D>()))?;
-
-        //         // callable(deserialized);
-        //     }
-        // }
-
-        // Ok(())
     }
 }
