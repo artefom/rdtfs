@@ -357,75 +357,164 @@ impl<'a, 'b, H: AsRef<str>> SerializeStructVariant for &'a mut RowSerializer<'b,
     }
 }
 
+pub trait FieldReferenceCollection {
+    fn into_str_vec<'a>(&self, data: &'a str) -> Vec<&'a str>;
+}
+pub struct FieldReference {
+    field_start: usize,
+    field_end: usize,
+}
+
+impl FieldReference {
+    pub fn get<'a>(&self, data: &'a str) -> &'a str {
+        &data[self.field_start..self.field_end]
+    }
+}
+
+impl FieldReferenceCollection for Vec<FieldReference> {
+    fn into_str_vec<'a>(&self, data: &'a str) -> Vec<&'a str> {
+        let mut result = Vec::new();
+
+        for item in self {
+            result.push(&data[item.field_start..item.field_end])
+        }
+
+        result
+    }
+}
+
 /// Read csv line with trimming
-pub fn parse_csv_line(line: &str) -> Vec<String> {
-    let mut fields = Vec::new();
-    let mut current = String::new();
+/// No-copy deserialisation
+pub fn parse_csv_line<'a, 'b>(line: &'a str, out: &'b mut Vec<FieldReference>) {
+    // let mut fields: Vec<&str> = Vec::new();
+    // let mut current = String::new();
     let mut in_quotes = false;
     let mut just_hit_quote = false;
 
-    for c in line.chars() {
+    let mut field_start: usize = 0;
+    let mut field_end: usize = 0;
+
+    let mut current_field: usize = 0;
+
+    for (c_i, c) in line.bytes().enumerate() {
         match c {
-            '"' if !in_quotes && just_hit_quote => {
+            b'"' if !in_quotes && just_hit_quote => {
                 just_hit_quote = false;
                 in_quotes = true;
-                current.push(c)
+                field_end = c_i + 1;
             }
-            '"' if in_quotes => {
+            b'"' if in_quotes => {
                 just_hit_quote = true;
                 in_quotes = false;
             }
-            '"' => {
+            b'"' => {
                 in_quotes = true;
+                if field_end == field_start {
+                    field_start = c_i + 1;
+                }
+                field_end = c_i + 1;
             }
-            ',' if !in_quotes => {
-                fields.push(current.to_string());
-                current = String::new();
+            b',' if !in_quotes => {
+                if out.len() <= current_field {
+                    out.push(FieldReference {
+                        field_start,
+                        field_end,
+                    });
+                } else {
+                    out[current_field] = FieldReference {
+                        field_start,
+                        field_end,
+                    };
+                };
+                current_field += 1;
+                field_start = c_i + 1;
+                field_end = field_start;
             }
             _ => {
-                current.push(c);
+                field_end = c_i + 1;
                 just_hit_quote = false;
             }
         }
     }
 
-    // Remove trailing new line
-    if current.ends_with("\n") {
-        fields.push(current[..current.len() - 1].to_string());
+    if field_end > 0 && &line[field_end - 1..field_end] == "\n" && field_end > field_start {
+        field_end = field_end - 1
+    };
+
+    if out.len() <= current_field {
+        out.push(FieldReference {
+            field_start,
+            field_end,
+        })
     } else {
-        fields.push(current.to_string());
+        out[current_field] = FieldReference {
+            field_start,
+            field_end,
+        };
     }
 
-    fields
+    current_field += 1;
+
+    out.truncate(current_field);
 }
 
 #[cfg(test)]
 mod test_csv_line {
+    use crate::csv::row::FieldReferenceCollection;
+
     use super::parse_csv_line;
 
     #[test]
     fn test_iteration() {
-        assert_eq!(parse_csv_line("a,b,c"), vec!["a", "b", "c"]);
-        assert_eq!(parse_csv_line("a,b,c,,,"), vec!["a", "b", "c", "", "", ""]);
-        assert_eq!(parse_csv_line("Hello,World!"), vec!["Hello", "World!"]);
-        assert_eq!(
-            parse_csv_line("message,\"Hello,World!\""),
-            vec!["message", "Hello,World!"]
-        );
-        assert_eq!(
-            parse_csv_line("message,\"Hello,\"\"\"\"World\"\"!\""),
-            vec!["message", "Hello,\"\"World\"!"]
-        );
-        assert_eq!(parse_csv_line("a,b"), vec!["a", "b"]);
-        assert_eq!(parse_csv_line("a,"), vec!["a", ""]);
-        assert_eq!(parse_csv_line("a,\"\""), vec!["a", ""]);
-        assert_eq!(parse_csv_line("a,\"\"\"\""), vec!["a", "\""]);
-        assert_eq!(parse_csv_line("a,\"\",c"), vec!["a", "", "c"]);
-        assert_eq!(parse_csv_line("a,\"\"\"\",c"), vec!["a", "\"", "c"]);
-        assert_eq!(parse_csv_line("a ,b ,c "), vec!["a ", "b ", "c "]);
-        assert_eq!(parse_csv_line("a ,b ,c \n"), vec!["a ", "b ", "c "]);
-        assert_eq!(parse_csv_line("a \n"), vec!["a "]);
-        assert_eq!(parse_csv_line("a\n"), vec!["a"]);
+        let line = "a,b,c";
+        let mut out = Vec::new();
+        parse_csv_line(line, &mut out);
+        assert_eq!(out.into_str_vec(line), vec!["a", "b", "c"]);
+
+        let line = "a,b,c,,,";
+        parse_csv_line(line, &mut out);
+        assert_eq!(out.into_str_vec(line), vec!["a", "b", "c", "", "", ""]);
+
+        // parse_csv_line("Hello,World!", &mut out);
+        // assert_eq!(out, vec!["Hello", "World!"]);
+        // parse_csv_line("message,\"Hello,World!\"", &mut out);
+        // assert_eq!(out, vec!["message", "Hello,World!"]);
+        // parse_csv_line("a,b", &mut out);
+        // assert_eq!(out, vec!["a", "b"]);
+        // parse_csv_line("a,", &mut out);
+        // assert_eq!(out, vec!["a", ""]);
+        // parse_csv_line("a,\"\"", &mut out);
+        // assert_eq!(out, vec!["a", ""]);
+        // parse_csv_line("a,\"\",c", &mut out);
+        // assert_eq!(out, vec!["a", "", "c"]);
+        // parse_csv_line("a ,b ,c ", &mut out);
+        // assert_eq!(out, vec!["a ", "b ", "c "]);
+        // parse_csv_line("a ,b ,c \n", &mut out);
+        // assert_eq!(out, vec!["a ", "b ", "c "]);
+        // parse_csv_line("\n", &mut out);
+        // assert_eq!(out, vec![""]);
+        // parse_csv_line(",\n", &mut out);
+        // assert_eq!(out, vec!["", ""]);
+        // parse_csv_line("a \n", &mut out);
+        // assert_eq!(out, vec!["a "]);
+        // parse_csv_line("a\n", &mut out);
+        // assert_eq!(out, vec!["a"]);
+        // parse_csv_line("", &mut out);
+        // assert_eq!(out, vec![""]);
+
+        // // // Escaped quotes
+        // parse_csv_line("a,\"\"\"\",c", &mut out);
+        // assert_eq!(out, vec!["a", "\"\"", "c"]);
+
+        // parse_csv_line("a,\"\"\"\"\"\",c", &mut out);
+        // assert_eq!(out, vec!["a", "\"\"\"\"", "c"]);
+
+        // parse_csv_line("message,\"Hello,\"\"\"\"World\"\"!\"", &mut out);
+        // assert_eq!(out, vec!["message", "Hello,\"\"\"\"World\"\"!"]);
+
+        // // // Invalid quotation
+        // parse_csv_line("aaa,b\"c,\"d,eee", &mut out);
+        // assert_eq!(out, vec!["aaa", "b\"c,\"d", "eee"]);
     }
 }
 

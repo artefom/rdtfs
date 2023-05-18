@@ -10,6 +10,8 @@ use serde::de::{
 };
 use serde::Deserialize;
 
+use super::row::FieldReference;
+
 #[derive(Debug)]
 pub enum Error {
     Message(String),
@@ -31,21 +33,23 @@ impl de::Error for Error {
     }
 }
 
-struct CsvRowDeserializer<'a> {
-    item: HashMap<&'a str, &'a str>,
+/// Lifetime 'de is the lifetime for references for the data that is being deserialized
+/// Lifetime 'a is for the reference to headers and divisions
+struct CsvRowDeserializer<'a, 'de> {
+    item: CsvRow<'a, 'de>,
     next_header: Option<&'static str>,
 }
 
-impl<'a> CsvRowDeserializer<'a> {
+impl<'de> CsvRowDeserializer<'_, 'de> {
     fn set_header(&mut self, header: &'static str) {
         self.next_header = Some(header)
     }
 
-    fn get_maybe_value(&self) -> Option<&'a str> {
+    fn get_maybe_value(&self) -> Option<&'de str> {
         let Some(next_header) = self.next_header else {
             unreachable!()
         };
-        let Some(&value) = self.item.get(next_header) else {
+        let Some(value) = self.item.get(next_header) else {
             return None
         };
         if value.len() == 0 {
@@ -54,11 +58,11 @@ impl<'a> CsvRowDeserializer<'a> {
         Some(value)
     }
 
-    fn get_value(&self) -> Result<&'a str, Error> {
+    fn get_value(&self) -> Result<&'de str, Error> {
         let Some(next_header) = self.next_header else {
             unreachable!()
         };
-        let Some(&value) = self.item.get(next_header) else {
+        let Some(value) = self.item.get(next_header) else {
             return Err(Error::Message(format!("Expected value, column {} not found", next_header)));
         };
         if value.len() == 0 {
@@ -71,14 +75,16 @@ impl<'a> CsvRowDeserializer<'a> {
     }
 }
 
-impl<'de, 'a> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'de> {
+impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
     type Error = Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        return Err(Error::Message("Deserializing any is not supported".to_string()));
+        return Err(Error::Message(
+            "Deserializing any is not supported".to_string(),
+        ));
     }
 
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -192,7 +198,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'de> {
         let value = self.get_value()?;
 
         let Ok(parsed) = value.parse::<f64>() else {
-            return Err(Error::Message("Could not parse value as f64".to_string()))
+            return Err(Error::Message(format!("Could not parse value {value} as f64")))
         };
 
         visitor.visit_f64(parsed)
@@ -360,13 +366,15 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'de> {
     }
 }
 
-struct RecordVisitor<'a, 'de> {
-    de: &'a mut CsvRowDeserializer<'de>,
+// Lifetime 'a is for headers and divisions
+// Lifetime 'de is for data that is being deserialized
+struct RecordVisitor<'a, 'b, 'de> {
+    de: &'b mut CsvRowDeserializer<'a, 'de>,
     fields: &'static [&'static str],
     current_field: usize,
 }
 
-impl<'a, 'de> MapAccess<'de> for RecordVisitor<'a, 'de> {
+impl<'a, 'b, 'de> MapAccess<'de> for RecordVisitor<'a, 'b, 'de> {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
@@ -392,18 +400,41 @@ impl<'a, 'de> MapAccess<'de> for RecordVisitor<'a, 'de> {
     }
 }
 
-pub fn deserialize_item<'a, D: Deserialize<'a>, S: AsRef<str>>(
-    header: &'a Vec<S>,
-    record: &'a Vec<S>,
+/// Lifetime 'de is for the data that is beinf deserialized
+/// Lifetime 'a is for reference to parent element
+struct CsvRow<'a, 'de> {
+    header: &'a HashMap<String, usize>,
+    divisions: &'a Vec<FieldReference>,
+    data: &'de str,
+}
+
+impl<'a, 'de> CsvRow<'a, 'de> {
+    fn get(&self, key: &str) -> Option<&'de str> {
+        let Some(col_i) = self.header.get(key) else {
+            return None
+        };
+
+        let Some(division) = self.divisions.get(*col_i) else {
+            return None
+        };
+
+        Some(division.get(self.data.as_ref()))
+    }
+}
+
+pub fn deserialize_item<'a, 'de, D: Deserialize<'de>>(
+    header: &'a HashMap<String, usize>,
+    record: &'a Vec<FieldReference>,
+    data: &'de str,
 ) -> Result<D, Error> {
-    let item: HashMap<&str, &str> = header
-        .iter()
-        .map(|x| x.as_ref())
-        .zip(record.iter().map(|x| x.as_ref()))
-        .collect();
+    let item = CsvRow::<'a, 'de> {
+        header: header,
+        divisions: record,
+        data: data,
+    };
 
     let mut deserializer = CsvRowDeserializer {
-        item: item,
+        item,
         next_header: None,
     };
 

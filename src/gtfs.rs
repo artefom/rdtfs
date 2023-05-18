@@ -705,10 +705,11 @@ pub trait GtfsStore {
             bail!("File {} not found", file_type.file_name())
         };
         println!("Decompressing {}", file_type.file_name());
-        let reader: CsvTableReader<I, _> = CsvTableReader::new(read);
+        let mut reader = CsvTableReader::new(read);
         let mut table = F::new();
-        for obj in reader {
-            table.push(obj)
+        match reader.map(|obj| table.push(obj)) {
+            Ok(_) => (),
+            Err(error) => log::error!("{error:?}"),
         }
         println!("  Found {} items", table.length());
         Ok(table)
@@ -873,11 +874,11 @@ fn decompress<'a, I: DeserializeOwned + 'static, F: TableFacory>(
         bail!("File not found")
     };
     log::info!("Decompressing items");
-    let reader: CsvTableReader<I, _> = CsvTableReader::new(read);
+    let mut reader = CsvTableReader::new(read);
     let mut table = F::new();
-    for obj in reader {
-        table.push(obj)
-    }
+
+    reader.map(|obj| table.push(obj))?;
+
     log::info!("Found {} items", table.length());
     Ok(table)
 }

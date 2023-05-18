@@ -115,11 +115,11 @@ async fn download_connections() -> Result<()> {
 }
 
 fn read_connections() {
-    let reader: CsvTableReader<gtfs::Route, _> = from_file("connections.csv");
+    let mut reader = from_file("connections.csv");
 
-    for item in reader {
-        println!("Connection: {:?}", item)
-    }
+    reader
+        .map(|obj: gtfs::Route| println!("Connection: {:?}", obj))
+        .unwrap();
 }
 
 fn write_connections<'a, I: IntoIterator<Item = &'a gtfs::Route>>(routes: I) {
