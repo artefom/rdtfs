@@ -22,7 +22,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use uuid::Uuid;
 use zip::{read::ZipFile, ZipArchive};
 
-use crate::csv::CsvTableReader;
+use crate::csv::{row::FieldReference, CsvTableReader};
 
 pub trait GtfsFile {
     fn get_file_type() -> GtfsFileType;
@@ -706,13 +706,19 @@ pub trait GtfsStore {
         };
         println!("Decompressing {}", file_type.file_name());
         let mut table = F::new();
-        {
-            let mut reader = CsvTableReader::new(read);
-            match reader.map(|obj| table.push(obj)) {
-                Ok(_) => (),
-                Err(error) => log::error!("Error decomporessing: {error:?}"),
-            }
+
+        let mut reader = CsvTableReader::new(read);
+        let mut buf = String::new();
+        let mut field_buf = Vec::new();
+
+        loop {
+            let next = match reader.read::<I>(&mut field_buf, &mut buf)? {
+                Some(value) => value,
+                None => break,
+            };
+            table.push(next);
         }
+
         println!("  Found {} items", table.length());
         Ok(table)
     }
@@ -879,7 +885,16 @@ fn decompress<'a, I: DeserializeOwned + 'static, F: TableFacory>(
     let mut reader = CsvTableReader::new(read);
     let mut table = F::new();
 
-    reader.map(|obj| table.push(obj))?;
+    let mut buf = String::new();
+    let mut field_buf = Vec::new();
+
+    loop {
+        let next = match reader.read::<I>(&mut field_buf, &mut buf)? {
+            Some(value) => value,
+            None => break,
+        };
+        table.push(next);
+    }
 
     log::info!("Found {} items", table.length());
     Ok(table)

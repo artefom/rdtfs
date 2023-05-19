@@ -19,9 +19,9 @@ use row::{parse_csv_line, serialize_to_csv, to_csv_row};
 use rowread::deserialize_item;
 
 use self::row::{FieldReference, FieldReferenceCollection};
-mod header;
-mod row;
-mod rowread;
+pub mod header;
+pub mod row;
+pub mod rowread;
 
 /// A variant of `Arc` that delegates IO traits if available on `&T`.
 #[derive(Debug)]
@@ -144,29 +144,27 @@ impl<R: Read + BufRead> CsvTableReader<R> {
         CsvTableReader { reader, headers }
     }
 
-    /// Map all rows from the file
-    pub fn map<F: FnMut(D) -> (), D: DeserializeOwned>(&mut self, mut callable: F) -> Result<()> {
-        // Read line into buffer and return if 0 bytes were read
-        let mut line_buf = String::new();
-        let mut field_buf: Vec<FieldReference> = Vec::new();
+    /// Deserialize one using buffer as intermediate storage
+    pub fn read<'de, D>(
+        &mut self,
+        field_buf: &'de mut Vec<FieldReference>,
+        line_buf: &'de mut String,
+    ) -> Result<Option<D>>
+    where
+        D: Deserialize<'de>,
+    {
+        line_buf.clear();
+        let num_read = self.reader.read_line(line_buf).unwrap();
 
-        loop {
-            line_buf.clear();
-            let num_read = self.reader.read_line(&mut line_buf).unwrap();
+        if num_read == 0 {
+            return Ok(None);
+        };
 
-            if num_read == 0 {
-                return Ok(());
-            };
+        parse_csv_line(&line_buf, field_buf);
 
-            parse_csv_line(&mut line_buf, &mut field_buf);
+        let deserialized = deserialize_item::<D>(&self.headers, field_buf, line_buf)
+            .with_context(|| format!("Could not deserialize {}", type_name::<D>()))?;
 
-            let deserialized = deserialize_item::<D>(&self.headers, &mut field_buf, &mut line_buf)
-                .with_context(|| format!("Could not deserialize {}", type_name::<D>()));
-
-            match deserialized {
-                Ok(value) => callable(value),
-                Err(error) => log::error!("Error deserializing: {error}"),
-            }
-        }
+        Ok(Some(deserialized))
     }
 }
