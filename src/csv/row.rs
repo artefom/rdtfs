@@ -460,7 +460,7 @@ pub fn parse_csv_line<'a, 'b>(line: &'a str, out: &'b mut Vec<FieldReference>) {
 
 #[cfg(test)]
 mod test_csv_line {
-    use crate::csv::row::FieldReferenceCollection;
+    use super::FieldReferenceCollection;
 
     use super::parse_csv_line;
 

@@ -16,7 +16,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use header::get_columns;
 use row::{parse_csv_line, serialize_to_csv, to_csv_row};
 
-use crate::csv::rowread::deserialize_item;
+use rowread::deserialize_item;
 
 use self::row::{FieldReference, FieldReferenceCollection};
 mod header;
