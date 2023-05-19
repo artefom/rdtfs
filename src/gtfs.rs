@@ -16,7 +16,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use zip::ZipArchive;
 
-use crate::csv::CsvTableReader;
+use crate::csv::read_csv;
 
 pub trait GtfsFile {
     fn get_file_type() -> GtfsFileType;
@@ -660,26 +660,15 @@ pub trait GtfsStore {
         &mut self,
     ) -> Result<Box<dyn Pushable<I>>> {
         let file_type = I::get_file_type();
-        let read = self.get_readable(file_type);
-
-        let Some(read) = read else {
-            bail!("File {} not found", file_type.file_name())
-        };
         println!("Decompressing {}", file_type.file_name());
         let mut table = F::new();
-
         {
-            let mut reader = CsvTableReader::new(read);
-
-            loop {
-                let next = match reader.read::<I>()? {
-                    Some(value) => value,
-                    None => break,
-                };
-                table.push(next);
-            }
+            let read = self.get_readable(file_type);
+            let Some(mut read) = read else {
+                bail!("File {} not found", file_type.file_name())
+            };
+            read_csv(&mut read, |x| table.push(x))?;
         }
-
         println!("  Found {} items", table.length());
         Ok(table)
     }

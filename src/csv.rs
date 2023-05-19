@@ -6,13 +6,13 @@ use std::{
 
 use anyhow::{Context, Result};
 
-use serde::Deserialize;
+use serde::{de::DeserializeOwned, Deserialize};
 
 use rowread::{deserialize_item, parse_csv_line, Divisions};
 
-pub mod rowread;
+mod rowread;
 
-pub struct CsvTableReader<R: Read> {
+struct CsvTableReader<R: Read> {
     reader: R,
     headers: HashMap<String, usize>,
     buf: CsvRowBuf,
@@ -33,7 +33,7 @@ impl Default for CsvRowBuf {
 }
 
 impl<R: Read + BufRead> CsvTableReader<R> {
-    pub fn new(mut reader: R) -> Self {
+    fn new(mut reader: R) -> Self {
         // File already has some data inside, get the headers
         // let mut first_line = String::new();
 
@@ -59,7 +59,7 @@ impl<R: Read + BufRead> CsvTableReader<R> {
     }
 
     /// Deserialize one using buffer as intermediate storage
-    pub fn read<'de, D>(&'de mut self) -> Result<Option<D>>
+    fn read<'de, D>(&'de mut self) -> Result<Option<D>>
     where
         D: Deserialize<'de>,
     {
@@ -79,3 +79,49 @@ impl<R: Read + BufRead> CsvTableReader<R> {
         Ok(Some(deserialized))
     }
 }
+
+pub fn read_csv<R, D, F>(read: &mut R, mut target: F) -> Result<()>
+where
+    R: BufRead,
+    D: DeserializeOwned,
+    F: FnMut(D) -> (),
+{
+    let mut reader = CsvTableReader::new(read);
+
+    loop {
+        let next = match reader.read::<D>()? {
+            Some(value) => value,
+            None => break,
+        };
+        target(next)
+    }
+    Ok(())
+}
+
+// fn decompress<R: Read>(
+//     &mut R
+// )  {
+//     let file_type = I::get_file_type();
+//     let read = self.get_readable(file_type);
+
+//     let Some(read) = read else {
+//         bail!("File {} not found", file_type.file_name())
+//     };
+//     println!("Decompressing {}", file_type.file_name());
+//     let mut table = F::new();
+
+//     {
+//         let mut reader = CsvTableReader::new(read);
+
+//         loop {
+//             let next = match reader.read::<I>()? {
+//                 Some(value) => value,
+//                 None => break,
+//             };
+//             table.push(next);
+//         }
+//     }
+
+//     println!("  Found {} items", table.length());
+//     Ok(table)
+// }
