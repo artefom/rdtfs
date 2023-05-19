@@ -389,12 +389,12 @@ impl<'a, 'b, 'de> MapAccess<'de> for RecordVisitor<'a, 'b, 'de> {
     }
 }
 
-pub struct FieldReference {
+pub struct Divisions {
     field_start: usize,
     field_end: usize,
 }
 
-impl FieldReference {
+impl Divisions {
     pub fn get<'a>(&self, data: &'a str) -> &'a str {
         &data[self.field_start..self.field_end]
     }
@@ -402,7 +402,7 @@ impl FieldReference {
 
 /// Read csv line with trimming
 /// No-copy deserialisation
-pub fn parse_csv_line<'a, 'b>(line: &'a str, out: &'b mut Vec<FieldReference>) {
+pub fn parse_csv_line<'a, 'b>(line: &'a str, out: &'b mut Vec<Divisions>) {
     // let mut fields: Vec<&str> = Vec::new();
     // let mut current = String::new();
     let mut in_quotes = false;
@@ -433,12 +433,12 @@ pub fn parse_csv_line<'a, 'b>(line: &'a str, out: &'b mut Vec<FieldReference>) {
             }
             b',' if !in_quotes => {
                 if out.len() <= current_field {
-                    out.push(FieldReference {
+                    out.push(Divisions {
                         field_start,
                         field_end,
                     });
                 } else {
-                    out[current_field] = FieldReference {
+                    out[current_field] = Divisions {
                         field_start,
                         field_end,
                     };
@@ -459,12 +459,12 @@ pub fn parse_csv_line<'a, 'b>(line: &'a str, out: &'b mut Vec<FieldReference>) {
     };
 
     if out.len() <= current_field {
-        out.push(FieldReference {
+        out.push(Divisions {
             field_start,
             field_end,
         })
     } else {
-        out[current_field] = FieldReference {
+        out[current_field] = Divisions {
             field_start,
             field_end,
         };
@@ -479,7 +479,7 @@ pub fn parse_csv_line<'a, 'b>(line: &'a str, out: &'b mut Vec<FieldReference>) {
 /// Lifetime 'a is for reference to parent element
 struct CsvRow<'a, 'de> {
     header: &'a HashMap<String, usize>,
-    divisions: &'a Vec<FieldReference>,
+    divisions: &'a Vec<Divisions>,
     data: &'de str,
 }
 
@@ -499,7 +499,7 @@ impl<'a, 'de> CsvRow<'a, 'de> {
 
 pub fn deserialize_item<'a, 'de, D: Deserialize<'de>>(
     header: &'a HashMap<String, usize>,
-    record: &'a Vec<FieldReference>,
+    record: &'a Vec<Divisions>,
     data: &'de str,
 ) -> Result<D, Error> {
     let item = CsvRow::<'a, 'de> {

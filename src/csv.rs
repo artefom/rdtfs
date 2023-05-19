@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 
 use serde::Deserialize;
 
-use rowread::{deserialize_item, parse_csv_line, FieldReference};
+use rowread::{deserialize_item, parse_csv_line, Divisions};
 
 pub mod rowread;
 
@@ -42,7 +42,7 @@ impl<R: Read + BufRead> CsvTableReader<R> {
     /// Deserialize one using buffer as intermediate storage
     pub fn read<'de, D>(
         &mut self,
-        field_buf: &'de mut Vec<FieldReference>,
+        field_buf: &'de mut Vec<Divisions>,
         line_buf: &'de mut String,
     ) -> Result<Option<D>>
     where
