@@ -479,7 +479,7 @@ pub fn parse_csv_line<'a, 'b>(line: &'a str, out: &'b mut Vec<Divisions>) {
 /// Lifetime 'a is for reference to parent element
 struct CsvRow<'a, 'de> {
     header: &'a HashMap<String, usize>,
-    divisions: &'a Vec<Divisions>,
+    divisions: &'de Vec<Divisions>,
     data: &'de str,
 }
 
@@ -499,7 +499,7 @@ impl<'a, 'de> CsvRow<'a, 'de> {
 
 pub fn deserialize_item<'a, 'de, D: Deserialize<'de>>(
     header: &'a HashMap<String, usize>,
-    record: &'a Vec<Divisions>,
+    record: &'de Vec<Divisions>,
     data: &'de str,
 ) -> Result<D, Error> {
     let item = CsvRow::<'a, 'de> {
