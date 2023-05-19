@@ -670,11 +670,9 @@ pub trait GtfsStore {
 
         {
             let mut reader = CsvTableReader::new(read);
-            let mut buf = String::new();
-            let mut field_buf = Vec::new();
 
             loop {
-                let next = match reader.read::<I>(&mut field_buf, &mut buf)? {
+                let next = match reader.read::<I>()? {
                     Some(value) => value,
                     None => break,
                 };

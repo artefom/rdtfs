@@ -15,6 +15,21 @@ pub mod rowread;
 pub struct CsvTableReader<R: Read> {
     reader: R,
     headers: HashMap<String, usize>,
+    buf: CsvRowBuf,
+}
+
+struct CsvRowBuf {
+    divisions: Vec<Divisions>,
+    data: String,
+}
+
+impl Default for CsvRowBuf {
+    fn default() -> Self {
+        Self {
+            divisions: Default::default(),
+            data: Default::default(),
+        }
+    }
 }
 
 impl<R: Read + BufRead> CsvTableReader<R> {
@@ -36,29 +51,30 @@ impl<R: Read + BufRead> CsvTableReader<R> {
             headers.insert(col.to_string(), col_i);
         }
 
-        CsvTableReader { reader, headers }
+        CsvTableReader {
+            reader,
+            headers,
+            buf: CsvRowBuf::default(),
+        }
     }
 
     /// Deserialize one using buffer as intermediate storage
-    pub fn read<'de, D>(
-        &mut self,
-        field_buf: &'de mut Vec<Divisions>,
-        line_buf: &'de mut String,
-    ) -> Result<Option<D>>
+    pub fn read<'de, D>(&'de mut self) -> Result<Option<D>>
     where
         D: Deserialize<'de>,
     {
-        line_buf.clear();
-        let num_read = self.reader.read_line(line_buf).unwrap();
+        self.buf.data.clear();
+        let num_read = self.reader.read_line(&mut self.buf.data).unwrap();
 
         if num_read == 0 {
             return Ok(None);
         };
 
-        parse_csv_line(&line_buf, field_buf);
+        parse_csv_line(&self.buf.data, &mut self.buf.divisions);
 
-        let deserialized = deserialize_item::<D>(&self.headers, field_buf, line_buf)
-            .with_context(|| format!("Could not deserialize {}", type_name::<D>()))?;
+        let deserialized =
+            deserialize_item::<D>(&self.headers, &self.buf.divisions, &self.buf.data)
+                .with_context(|| format!("Could not deserialize {}", type_name::<D>()))?;
 
         Ok(Some(deserialized))
     }
