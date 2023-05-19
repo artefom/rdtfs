@@ -34,17 +34,17 @@ struct CsvRowDeserializer<'a, 'de> {
 }
 
 impl<'de> CsvRowDeserializer<'_, 'de> {
-    fn get_maybe_value(&self) -> Option<&'de str> {
+    fn has_value(&self) -> bool {
         let Some(next_header) = self.next_header else {
             unreachable!()
         };
         let Some(value) = self.item.get(next_header) else {
-            return None
+            return false;
         };
         if value.len() == 0 {
-            return None;
+            return false;
         };
-        Some(value)
+        return true;
     }
 
     fn get_value(&self) -> Result<&'de str, Error> {
@@ -52,6 +52,22 @@ impl<'de> CsvRowDeserializer<'_, 'de> {
             unreachable!()
         };
         let Some(value) = self.item.get(next_header) else {
+            return Err(Error::Message(format!("Expected value, column {} not found", next_header)));
+        };
+        if value.len() == 0 {
+            return Err(Error::Message(format!(
+                "Expected value for column {} got empty string",
+                next_header
+            )));
+        }
+        Ok(value)
+    }
+
+    fn get_string(&self) -> Result<String, Error> {
+        let Some(next_header) = self.next_header else {
+            unreachable!()
+        };
+        let Some(value) = self.item.get_string(next_header) else {
             return Err(Error::Message(format!("Expected value, column {} not found", next_header)));
         };
         if value.len() == 0 {
@@ -200,20 +216,20 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
         todo!()
     }
 
-    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    /// str deserialization from csv is not supported as it has escaped '""
+    fn deserialize_str<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        let value = self.get_value()?;
-        visitor.visit_borrowed_str(value)
+        todo!()
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        let value = self.get_value()?;
-        visitor.visit_borrowed_str(value)
+        let value = self.get_string()?;
+        visitor.visit_string(value)
     }
 
     fn deserialize_bytes<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
@@ -234,9 +250,10 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
     where
         V: Visitor<'de>,
     {
-        match self.get_maybe_value() {
-            Some(_value) => visitor.visit_some(self),
-            None => visitor.visit_none(),
+        if self.has_value() {
+            visitor.visit_some(self)
+        } else {
+            visitor.visit_none()
         }
     }
 
@@ -392,11 +409,22 @@ impl<'a, 'b, 'de> MapAccess<'de> for RecordVisitor<'a, 'b, 'de> {
 pub struct Divisions {
     field_start: usize,
     field_end: usize,
+    has_semicolon: bool,
 }
 
 impl Divisions {
     pub fn get<'a>(&self, data: &'a str) -> &'a str {
         &data[self.field_start..self.field_end]
+    }
+
+    pub fn to_string(&self, data: &str) -> String {
+        let data = &data[self.field_start..self.field_end];
+
+        if self.has_semicolon {
+            data.replace("\"\"", "\"")
+        } else {
+            data.to_string()
+        }
     }
 }
 
@@ -413,17 +441,23 @@ pub fn parse_csv_line<'a, 'b>(line: &'a str, out: &'b mut Vec<Divisions>) {
 
     let mut current_field: usize = 0;
 
+    let mut has_semicolon: bool = false;
+
     for (c_i, c) in line.bytes().enumerate() {
         match c {
+            // Head double quote
             b'"' if !in_quotes && just_hit_quote => {
                 just_hit_quote = false;
                 in_quotes = true;
                 field_end = c_i + 1;
+                has_semicolon = true;
             }
+            // Hit closing quote or double quote
             b'"' if in_quotes => {
                 just_hit_quote = true;
                 in_quotes = false;
             }
+            // Hit opening quite
             b'"' => {
                 in_quotes = true;
                 if field_end == field_start {
@@ -431,19 +465,23 @@ pub fn parse_csv_line<'a, 'b>(line: &'a str, out: &'b mut Vec<Divisions>) {
                 }
                 field_end = c_i + 1;
             }
+            // Hit field separator
             b',' if !in_quotes => {
                 if out.len() <= current_field {
                     out.push(Divisions {
                         field_start,
                         field_end,
+                        has_semicolon,
                     });
                 } else {
                     out[current_field] = Divisions {
                         field_start,
                         field_end,
+                        has_semicolon,
                     };
                 };
                 current_field += 1;
+                has_semicolon = false;
                 field_start = c_i + 1;
                 field_end = field_start;
             }
@@ -462,11 +500,13 @@ pub fn parse_csv_line<'a, 'b>(line: &'a str, out: &'b mut Vec<Divisions>) {
         out.push(Divisions {
             field_start,
             field_end,
+            has_semicolon,
         })
     } else {
         out[current_field] = Divisions {
             field_start,
             field_end,
+            has_semicolon,
         };
     }
 
@@ -494,6 +534,18 @@ impl<'a, 'de> CsvRow<'a, 'de> {
         };
 
         Some(division.get(self.data.as_ref()))
+    }
+
+    fn get_string(&self, key: &str) -> Option<String> {
+        let Some(col_i) = self.header.get(key) else {
+            return None
+        };
+
+        let Some(division) = self.divisions.get(*col_i) else {
+            return None
+        };
+
+        Some(division.to_string(self.data.as_ref()))
     }
 }
 

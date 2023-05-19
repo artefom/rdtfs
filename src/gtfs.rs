@@ -16,7 +16,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use zip::ZipArchive;
 
-use crate::csv::read_csv;
+use crate::csv::CsvTableReader;
 
 pub trait GtfsFile {
     fn get_file_type() -> GtfsFileType;
@@ -656,30 +656,20 @@ impl GtfsFileType {
 pub trait GtfsStore {
     fn get_readable<'a>(&'a mut self, file_type: GtfsFileType) -> Option<Box<dyn BufRead + 'a>>;
 
-    fn decompress<'a, I: DeserializeOwned + GtfsFile + 'static, F: TableFacory>(
-        &mut self,
-    ) -> Result<Box<dyn Pushable<I>>> {
-        let file_type = I::get_file_type();
-        println!("Decompressing {}", file_type.file_name());
-        let mut table = F::new();
-        {
-            let read = self.get_readable(file_type);
-            let Some(mut read) = read else {
+    fn scan<F, D: DeserializeOwned + GtfsFile>(&mut self, mut target: F) -> Result<()>
+    where
+        F: FnMut(D) -> (),
+    {
+        let file_type = D::get_file_type();
+        let read = self.get_readable(GtfsFileType::StopTimes);
+        let Some(read) = read else {
                 bail!("File {} not found", file_type.file_name())
             };
-            read_csv(&mut read, |x| table.push(x))?;
+        let reader = CsvTableReader::<_, D>::new(read);
+        for item in reader {
+            target(item?)
         }
-        println!("  Found {} items", table.length());
-        Ok(table)
-    }
-
-    fn try_decompress<'a, I: DeserializeOwned + GtfsFile + 'static, F: TableFacory>(
-        &mut self,
-    ) -> Option<Box<dyn Pushable<I>>> {
-        match self.decompress::<I, F>() {
-            Ok(value) => Some(value),
-            Err(_value) => None,
-        }
+        Ok(())
     }
 }
 
@@ -801,72 +791,40 @@ pub trait TableFacory {
     fn new<I: 'static>() -> Box<dyn Pushable<I>>;
 }
 
-pub struct GtfsCollection {
-    _agency: Box<dyn Pushable<Agency>>,
-    _stops: Box<dyn Pushable<Stop>>,
-    _routes: Box<dyn Pushable<Route>>,
-    _trips: Box<dyn Pushable<Trip>>,
-    _stop_times: Box<dyn Pushable<StopTime>>,
-    _calendar: Option<Box<dyn Pushable<Calendar>>>,
-    _calendar_dates: Option<Box<dyn Pushable<CalendarDate>>>,
-    _fare_attributes: Option<Box<dyn Pushable<FareAttribute>>>,
-    _fare_rules: Option<Box<dyn Pushable<FareRule>>>,
-    _shapes: Option<Box<dyn Pushable<Shape>>>,
-    _frequencies: Option<Box<dyn Pushable<Frequency>>>,
-    _transfers: Option<Box<dyn Pushable<Transfer>>>,
-    _pathways: Option<Box<dyn Pushable<PathWay>>>,
-    _levels: Option<Box<dyn Pushable<Level>>>,
-    _feed_info: Option<Box<dyn Pushable<FeedInfo>>>,
-    _translations: Option<Box<dyn Pushable<Translation>>>,
-    _attributions: Option<Box<dyn Pushable<Attribution>>>,
-    _ticketing_identifiers: Option<Box<dyn Pushable<TicketingIdentifier>>>,
-    _ticketing_deep_links: Option<Box<dyn Pushable<TicketingDeepLink>>>,
-}
+pub struct GtfsCollection {}
 
 impl GtfsCollection {
     /// Create gtfs collection from a readable store
     pub fn from_store<T: GtfsStore, F: TableFacory>(store: &mut T) -> Result<Self> {
-        // let agency = decompress::<Agency, F>(store.get_readable(GtfsFileType::Agencies))?;
-        let agency = store.decompress::<Agency, F>()?;
-        let stops = store.decompress::<Stop, F>()?;
-        let routes = store.decompress::<Route, F>()?;
-        let trips = store.decompress::<Trip, F>()?;
-        let stop_times = store.decompress::<StopTime, F>()?;
-        let calendar = store.try_decompress::<Calendar, F>();
-        let calendar_dates = store.try_decompress::<CalendarDate, F>();
-        let fare_attributes = store.try_decompress::<FareAttribute, F>();
-        let fare_rules = store.try_decompress::<FareRule, F>();
-        let shapes = store.try_decompress::<Shape, F>();
-        let frequencies = store.try_decompress::<Frequency, F>();
-        let transfers = store.try_decompress::<Transfer, F>();
-        let pathways = store.try_decompress::<PathWay, F>();
-        let levels = store.try_decompress::<Level, F>();
-        let feed_info = store.try_decompress::<FeedInfo, F>();
-        let translations = store.try_decompress::<Translation, F>();
-        let attributions = store.try_decompress::<Attribution, F>();
-        let ticketing_identifiers = store.try_decompress::<TicketingIdentifier, F>();
-        let ticketing_deep_links = store.try_decompress::<TicketingDeepLink, F>();
+        let mut total_stop_times = 0;
 
-        Ok(GtfsCollection {
-            _agency: agency,
-            _stops: stops,
-            _routes: routes,
-            _trips: trips,
-            _stop_times: stop_times,
-            _calendar: calendar,
-            _calendar_dates: calendar_dates,
-            _fare_attributes: fare_attributes,
-            _fare_rules: fare_rules,
-            _shapes: shapes,
-            _frequencies: frequencies,
-            _transfers: transfers,
-            _pathways: pathways,
-            _levels: levels,
-            _feed_info: feed_info,
-            _translations: translations,
-            _attributions: attributions,
-            _ticketing_identifiers: ticketing_identifiers,
-            _ticketing_deep_links: ticketing_deep_links,
-        })
+        store.scan(|_: StopTime| {
+            total_stop_times += 1;
+        })?;
+
+        println!("Total stop times: {}", total_stop_times);
+
+        // let agency = decompress::<Agency, F>(store.get_readable(GtfsFileType::Agencies))?;
+        // let agency = store.decompress::<Agency, F>()?;
+        // let stops = store.decompress::<Stop, F>()?;
+        // let routes = store.decompress::<Route, F>()?;
+        // let trips = store.decompress::<Trip, F>()?;
+        // let stop_times = store.decompress::<StopTime, F>()?;
+        // let calendar = store.try_decompress::<Calendar, F>();
+        // let calendar_dates = store.try_decompress::<CalendarDate, F>();
+        // let fare_attributes = store.try_decompress::<FareAttribute, F>();
+        // let fare_rules = store.try_decompress::<FareRule, F>();
+        // let shapes = store.try_decompress::<Shape, F>();
+        // let frequencies = store.try_decompress::<Frequency, F>();
+        // let transfers = store.try_decompress::<Transfer, F>();
+        // let pathways = store.try_decompress::<PathWay, F>();
+        // let levels = store.try_decompress::<Level, F>();
+        // let feed_info = store.try_decompress::<FeedInfo, F>();
+        // let translations = store.try_decompress::<Translation, F>();
+        // let attributions = store.try_decompress::<Attribution, F>();
+        // let ticketing_identifiers = store.try_decompress::<TicketingIdentifier, F>();
+        // let ticketing_deep_links = store.try_decompress::<TicketingDeepLink, F>();
+
+        Ok(GtfsCollection {})
     }
 }
