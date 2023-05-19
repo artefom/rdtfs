@@ -1,16 +1,9 @@
-use std::any::type_name;
 use std::collections::HashMap;
 use std::error;
 use std::fmt;
-use std::ops::{AddAssign, MulAssign, Neg};
 
-use serde::de::{
-    self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess,
-    Visitor,
-};
+use serde::de::{self, DeserializeSeed, MapAccess, Visitor};
 use serde::Deserialize;
-
-use super::row::FieldReference;
 
 #[derive(Debug)]
 pub enum Error {
@@ -41,10 +34,6 @@ struct CsvRowDeserializer<'a, 'de> {
 }
 
 impl<'de> CsvRowDeserializer<'_, 'de> {
-    fn set_header(&mut self, header: &'static str) {
-        self.next_header = Some(header)
-    }
-
     fn get_maybe_value(&self) -> Option<&'de str> {
         let Some(next_header) = self.next_header else {
             unreachable!()
@@ -78,7 +67,7 @@ impl<'de> CsvRowDeserializer<'_, 'de> {
 impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
     type Error = Error;
 
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -87,7 +76,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
         ));
     }
 
-    fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_bool<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -204,7 +193,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
         visitor.visit_f64(parsed)
     }
 
-    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_char<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -227,14 +216,14 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
         visitor.visit_borrowed_str(value)
     }
 
-    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_bytes<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_byte_buf<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -246,12 +235,12 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
         V: Visitor<'de>,
     {
         match self.get_maybe_value() {
-            Some(value) => visitor.visit_some(self),
+            Some(_value) => visitor.visit_some(self),
             None => visitor.visit_none(),
         }
     }
 
-    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_unit<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -260,8 +249,8 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
 
     fn deserialize_unit_struct<V>(
         self,
-        name: &'static str,
-        visitor: V,
+        _name: &'static str,
+        _visitor: V,
     ) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
@@ -271,8 +260,8 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
 
     fn deserialize_newtype_struct<V>(
         self,
-        name: &'static str,
-        visitor: V,
+        _name: &'static str,
+        _visitor: V,
     ) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
@@ -280,14 +269,14 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
         todo!()
     }
 
-    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_seq<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_tuple<V>(self, _len: usize, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -296,9 +285,9 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
 
     fn deserialize_tuple_struct<V>(
         self,
-        name: &'static str,
-        len: usize,
-        visitor: V,
+        _name: &'static str,
+        _len: usize,
+        _visitor: V,
     ) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
@@ -306,7 +295,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
         todo!()
     }
 
-    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_map<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -315,7 +304,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
 
     fn deserialize_struct<V>(
         self,
-        name: &'static str,
+        _name: &'static str,
         fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Self::Error>
@@ -335,9 +324,9 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
 
     fn deserialize_enum<V>(
         self,
-        name: &'static str,
-        variants: &'static [&'static str],
-        visitor: V,
+        _name: &'static str,
+        _variants: &'static [&'static str],
+        _visitor: V,
     ) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
@@ -358,7 +347,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
         visitor.visit_borrowed_str(value)
     }
 
-    fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_ignored_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -398,6 +387,92 @@ impl<'a, 'b, 'de> MapAccess<'de> for RecordVisitor<'a, 'b, 'de> {
     {
         seed.deserialize(&mut *self.de)
     }
+}
+
+pub struct FieldReference {
+    field_start: usize,
+    field_end: usize,
+}
+
+impl FieldReference {
+    pub fn get<'a>(&self, data: &'a str) -> &'a str {
+        &data[self.field_start..self.field_end]
+    }
+}
+
+/// Read csv line with trimming
+/// No-copy deserialisation
+pub fn parse_csv_line<'a, 'b>(line: &'a str, out: &'b mut Vec<FieldReference>) {
+    // let mut fields: Vec<&str> = Vec::new();
+    // let mut current = String::new();
+    let mut in_quotes = false;
+    let mut just_hit_quote = false;
+
+    let mut field_start: usize = 0;
+    let mut field_end: usize = 0;
+
+    let mut current_field: usize = 0;
+
+    for (c_i, c) in line.bytes().enumerate() {
+        match c {
+            b'"' if !in_quotes && just_hit_quote => {
+                just_hit_quote = false;
+                in_quotes = true;
+                field_end = c_i + 1;
+            }
+            b'"' if in_quotes => {
+                just_hit_quote = true;
+                in_quotes = false;
+            }
+            b'"' => {
+                in_quotes = true;
+                if field_end == field_start {
+                    field_start = c_i + 1;
+                }
+                field_end = c_i + 1;
+            }
+            b',' if !in_quotes => {
+                if out.len() <= current_field {
+                    out.push(FieldReference {
+                        field_start,
+                        field_end,
+                    });
+                } else {
+                    out[current_field] = FieldReference {
+                        field_start,
+                        field_end,
+                    };
+                };
+                current_field += 1;
+                field_start = c_i + 1;
+                field_end = field_start;
+            }
+            _ => {
+                field_end = c_i + 1;
+                just_hit_quote = false;
+            }
+        }
+    }
+
+    if field_end > 0 && &line[field_end - 1..field_end] == "\n" && field_end > field_start {
+        field_end = field_end - 1
+    };
+
+    if out.len() <= current_field {
+        out.push(FieldReference {
+            field_start,
+            field_end,
+        })
+    } else {
+        out[current_field] = FieldReference {
+            field_start,
+            field_end,
+        };
+    }
+
+    current_field += 1;
+
+    out.truncate(current_field);
 }
 
 /// Lifetime 'de is for the data that is beinf deserialized

@@ -13,7 +13,7 @@ impl<T> BigAssTable<T> {
         }
     }
 
-    pub fn push(&mut self, data: T) {
+    pub fn push(&mut self, _data: T) {
         self.count += 1
     }
 

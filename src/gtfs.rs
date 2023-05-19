@@ -1,28 +1,22 @@
 /// Module for reading gtfs collection
 ///
 use std::{
-    borrow::Borrow,
-    cell::{Ref, RefCell},
     collections::HashMap,
-    fmt::Display,
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Read, Seek},
-    marker::PhantomData,
     path::Path,
-    time::{Duration, Instant},
 };
 
 use anyhow::{bail, Result};
-use chrono::NaiveDate;
-use indicatif::{ProgressBar, ProgressStyle};
-use rust_decimal::Decimal;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::value;
-use serde_repr::{Deserialize_repr, Serialize_repr};
-use uuid::Uuid;
-use zip::{read::ZipFile, ZipArchive};
 
-use crate::csv::{row::FieldReference, CsvTableReader};
+use indicatif::{ProgressBar, ProgressStyle};
+
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
+use serde_repr::{Deserialize_repr, Serialize_repr};
+use zip::ZipArchive;
+
+use crate::csv::CsvTableReader;
 
 pub trait GtfsFile {
     fn get_file_type() -> GtfsFileType;
@@ -102,26 +96,6 @@ pub struct Route {
     pub continuous_pickup: Option<ContinuousPickupType>,
     pub continuous_drop_off: Option<ContinuousDropOffType>,
     pub ticketing_deep_link_id: Option<String>,
-}
-
-impl Route {
-    pub fn simple(agency_id: &str, name: &str) -> Self {
-        Route {
-            route_id: Uuid::new_v4().to_string(),
-            agency_id: agency_id.to_string(),
-            route_short_name: Some(name.to_string()),
-            route_long_name: None,
-            route_desc: None,
-            route_type: RouteType::Bus,
-            route_url: None,
-            route_color: Some(Color::Hex("FFFFFF".to_string())),
-            route_text_color: Some(Color::Hex("BBBBBB".to_string())),
-            route_sort_order: None,
-            continuous_pickup: Some(ContinuousPickupType::NoContinuousStoppingPickup),
-            continuous_drop_off: Some(ContinuousDropOffType::NoContinuousStoppingDropOff),
-            ticketing_deep_link_id: None,
-        }
-    }
 }
 
 impl GtfsFile for Route {
@@ -600,19 +574,6 @@ impl GtfsFile for TicketingDeepLink {
     }
 }
 
-struct GtfsFullRouteInfo {
-    route: Route,
-}
-
-struct GtfsWriter {}
-
-impl GtfsWriter {
-    /// Add full route info into gtfs collection
-    fn write_route(route: GtfsFullRouteInfo) {
-        todo!()
-    }
-}
-
 #[derive(Eq, Hash, PartialEq, Clone, Copy)]
 pub enum GtfsFileType {
     Agencies,
@@ -707,16 +668,18 @@ pub trait GtfsStore {
         println!("Decompressing {}", file_type.file_name());
         let mut table = F::new();
 
-        let mut reader = CsvTableReader::new(read);
-        let mut buf = String::new();
-        let mut field_buf = Vec::new();
+        {
+            let mut reader = CsvTableReader::new(read);
+            let mut buf = String::new();
+            let mut field_buf = Vec::new();
 
-        loop {
-            let next = match reader.read::<I>(&mut field_buf, &mut buf)? {
-                Some(value) => value,
-                None => break,
-            };
-            table.push(next);
+            loop {
+                let next = match reader.read::<I>(&mut field_buf, &mut buf)? {
+                    Some(value) => value,
+                    None => break,
+                };
+                table.push(next);
+            }
         }
 
         println!("  Found {} items", table.length());
@@ -728,7 +691,7 @@ pub trait GtfsStore {
     ) -> Option<Box<dyn Pushable<I>>> {
         match self.decompress::<I, F>() {
             Ok(value) => Some(value),
-            Err(value) => None,
+            Err(_value) => None,
         }
     }
 }
@@ -757,7 +720,7 @@ fn get_file_names<'a, R: Read + Seek>(
             continue
         };
 
-        if let Some(value) = mapping.insert(file_type, zipped_file.name().to_string()) {
+        if let Some(_value) = mapping.insert(file_type, zipped_file.name().to_string()) {
             bail!("Duplicate file in zip: {}", zipped_file.name())
         };
     }
@@ -767,7 +730,6 @@ fn get_file_names<'a, R: Read + Seek>(
 
 /// Reads data and reports progress
 struct ProgressReader<F> {
-    consumed: u64,
     file: F,
     bar: ProgressBar,
 }
@@ -785,7 +747,6 @@ impl<F> ProgressReader<F> {
         );
 
         ProgressReader {
-            consumed: 0,
             file,
             bar: progress,
         }
@@ -854,66 +815,30 @@ pub trait TableFacory {
 }
 
 pub struct GtfsCollection {
-    agency: Box<dyn Pushable<Agency>>,
-    stops: Box<dyn Pushable<Stop>>,
-    routes: Box<dyn Pushable<Route>>,
-    trips: Box<dyn Pushable<Trip>>,
-    stop_times: Box<dyn Pushable<StopTime>>,
-    calendar: Option<Box<dyn Pushable<Calendar>>>,
-    calendar_dates: Option<Box<dyn Pushable<CalendarDate>>>,
-    fare_attributes: Option<Box<dyn Pushable<FareAttribute>>>,
-    fare_rules: Option<Box<dyn Pushable<FareRule>>>,
-    shapes: Option<Box<dyn Pushable<Shape>>>,
-    frequencies: Option<Box<dyn Pushable<Frequency>>>,
-    transfers: Option<Box<dyn Pushable<Transfer>>>,
-    pathways: Option<Box<dyn Pushable<PathWay>>>,
-    levels: Option<Box<dyn Pushable<Level>>>,
-    feed_info: Option<Box<dyn Pushable<FeedInfo>>>,
-    translations: Option<Box<dyn Pushable<Translation>>>,
-    attributions: Option<Box<dyn Pushable<Attribution>>>,
-    ticketing_identifiers: Option<Box<dyn Pushable<TicketingIdentifier>>>,
-    ticketing_deep_links: Option<Box<dyn Pushable<TicketingDeepLink>>>,
-}
-
-fn decompress<'a, I: DeserializeOwned + 'static, F: TableFacory>(
-    read: Option<Box<dyn BufRead + 'a>>,
-) -> Result<Box<dyn Pushable<I>>> {
-    let Some(read) = read else {
-        bail!("File not found")
-    };
-    log::info!("Decompressing items");
-    let mut reader = CsvTableReader::new(read);
-    let mut table = F::new();
-
-    let mut buf = String::new();
-    let mut field_buf = Vec::new();
-
-    loop {
-        let next = match reader.read::<I>(&mut field_buf, &mut buf)? {
-            Some(value) => value,
-            None => break,
-        };
-        table.push(next);
-    }
-
-    log::info!("Found {} items", table.length());
-    Ok(table)
-}
-
-fn try_decompress<'a, I: DeserializeOwned + 'static, F: TableFacory>(
-    read: Option<Box<dyn BufRead + 'a>>,
-) -> Option<Box<dyn Pushable<I>>> {
-    match decompress::<I, F>(read) {
-        Ok(value) => Some(value),
-        Err(value) => None,
-    }
+    _agency: Box<dyn Pushable<Agency>>,
+    _stops: Box<dyn Pushable<Stop>>,
+    _routes: Box<dyn Pushable<Route>>,
+    _trips: Box<dyn Pushable<Trip>>,
+    _stop_times: Box<dyn Pushable<StopTime>>,
+    _calendar: Option<Box<dyn Pushable<Calendar>>>,
+    _calendar_dates: Option<Box<dyn Pushable<CalendarDate>>>,
+    _fare_attributes: Option<Box<dyn Pushable<FareAttribute>>>,
+    _fare_rules: Option<Box<dyn Pushable<FareRule>>>,
+    _shapes: Option<Box<dyn Pushable<Shape>>>,
+    _frequencies: Option<Box<dyn Pushable<Frequency>>>,
+    _transfers: Option<Box<dyn Pushable<Transfer>>>,
+    _pathways: Option<Box<dyn Pushable<PathWay>>>,
+    _levels: Option<Box<dyn Pushable<Level>>>,
+    _feed_info: Option<Box<dyn Pushable<FeedInfo>>>,
+    _translations: Option<Box<dyn Pushable<Translation>>>,
+    _attributions: Option<Box<dyn Pushable<Attribution>>>,
+    _ticketing_identifiers: Option<Box<dyn Pushable<TicketingIdentifier>>>,
+    _ticketing_deep_links: Option<Box<dyn Pushable<TicketingDeepLink>>>,
 }
 
 impl GtfsCollection {
     /// Create gtfs collection from a readable store
     pub fn from_store<T: GtfsStore, F: TableFacory>(store: &mut T) -> Result<Self> {
-        use GtfsFileType::*;
-
         // let agency = decompress::<Agency, F>(store.get_readable(GtfsFileType::Agencies))?;
         let agency = store.decompress::<Agency, F>()?;
         let stops = store.decompress::<Stop, F>()?;
@@ -936,25 +861,25 @@ impl GtfsCollection {
         let ticketing_deep_links = store.try_decompress::<TicketingDeepLink, F>();
 
         Ok(GtfsCollection {
-            agency,
-            stops,
-            routes,
-            trips,
-            stop_times,
-            calendar,
-            calendar_dates,
-            fare_attributes,
-            fare_rules,
-            shapes,
-            frequencies,
-            transfers,
-            pathways,
-            levels,
-            feed_info,
-            translations,
-            attributions,
-            ticketing_identifiers,
-            ticketing_deep_links,
+            _agency: agency,
+            _stops: stops,
+            _routes: routes,
+            _trips: trips,
+            _stop_times: stop_times,
+            _calendar: calendar,
+            _calendar_dates: calendar_dates,
+            _fare_attributes: fare_attributes,
+            _fare_rules: fare_rules,
+            _shapes: shapes,
+            _frequencies: frequencies,
+            _transfers: transfers,
+            _pathways: pathways,
+            _levels: levels,
+            _feed_info: feed_info,
+            _translations: translations,
+            _attributions: attributions,
+            _ticketing_identifiers: ticketing_identifiers,
+            _ticketing_deep_links: ticketing_deep_links,
         })
     }
 }
