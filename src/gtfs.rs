@@ -661,7 +661,7 @@ pub trait GtfsStore {
         F: FnMut(D) -> (),
     {
         let file_type = D::get_file_type();
-        let read = self.get_readable(GtfsFileType::StopTimes);
+        let read = self.get_readable(file_type);
         let Some(read) = read else {
                 bail!("File {} not found", file_type.file_name())
             };
@@ -789,42 +789,4 @@ pub trait Pushable<I> {
 
 pub trait TableFacory {
     fn new<I: 'static>() -> Box<dyn Pushable<I>>;
-}
-
-pub struct GtfsCollection {}
-
-impl GtfsCollection {
-    /// Create gtfs collection from a readable store
-    pub fn from_store<T: GtfsStore, F: TableFacory>(store: &mut T) -> Result<Self> {
-        let mut total_stop_times = 0;
-
-        store.scan(|_: StopTime| {
-            total_stop_times += 1;
-        })?;
-
-        println!("Total stop times: {}", total_stop_times);
-
-        // let agency = decompress::<Agency, F>(store.get_readable(GtfsFileType::Agencies))?;
-        // let agency = store.decompress::<Agency, F>()?;
-        // let stops = store.decompress::<Stop, F>()?;
-        // let routes = store.decompress::<Route, F>()?;
-        // let trips = store.decompress::<Trip, F>()?;
-        // let stop_times = store.decompress::<StopTime, F>()?;
-        // let calendar = store.try_decompress::<Calendar, F>();
-        // let calendar_dates = store.try_decompress::<CalendarDate, F>();
-        // let fare_attributes = store.try_decompress::<FareAttribute, F>();
-        // let fare_rules = store.try_decompress::<FareRule, F>();
-        // let shapes = store.try_decompress::<Shape, F>();
-        // let frequencies = store.try_decompress::<Frequency, F>();
-        // let transfers = store.try_decompress::<Transfer, F>();
-        // let pathways = store.try_decompress::<PathWay, F>();
-        // let levels = store.try_decompress::<Level, F>();
-        // let feed_info = store.try_decompress::<FeedInfo, F>();
-        // let translations = store.try_decompress::<Translation, F>();
-        // let attributions = store.try_decompress::<Attribution, F>();
-        // let ticketing_identifiers = store.try_decompress::<TicketingIdentifier, F>();
-        // let ticketing_deep_links = store.try_decompress::<TicketingDeepLink, F>();
-
-        Ok(GtfsCollection {})
-    }
 }
