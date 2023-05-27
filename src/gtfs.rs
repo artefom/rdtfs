@@ -4,11 +4,10 @@ use std::{
     collections::HashMap,
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Read, Seek},
-    marker::PhantomData,
     path::Path,
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 
 use indicatif::{ProgressBar, ProgressStyle};
 
