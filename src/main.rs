@@ -139,46 +139,5 @@ fn main() -> Result<()> {
 
     println!("Done");
 
-    // for item in joined {
-    //     println!("{:?}", item);
-    //     break;
-    // }
-
-    // let stop_times: PartitionedReader<StopTime> = (&mut gtfs_store).into();
-    // let trips: PartitionedReader<Trip> = (&mut gtfs_store).into();
-
-    // for item in joined {
-    //     println!("Item: {:?}", item);
-    //     break;
-    // }
-
-    // for item in gtfs_store.get::<Stop>()? {
-    //     println!("item: {:?}", item);
-    // }
-
-    // join2(gtfs_store.get::<StopTime>()?, gtfs_store.get::<Trip>()?);
-
-    // let join_reader = join(gtfs_store.get::<StopTime>(), |x| x.stop, todo!(), todo!());
-
-    // let mut stop_times = PartitionReader::<Stop>::new(100)?;
-
-    // // Write into partitioned writer
-    // gtfs_store
-    //     .scan(|item| {
-    //         match partitioned_stop_times.write(&item, |x| &x.stop_code) {
-    //             Ok(_) => (),
-    //             Err(err) => println!("Error during write: {:?}", err),
-    //         };
-    //     })
-    //     .context("Could not scan")?;
-
-    // let mut reader = partitioned_stop_times.into_reader()?;
-
-    // println!("Partition 1");
-    // for item in reader.next_partition()?.unwrap() {
-    //     println!("{:?}", item)
-    // }
-
-    // let _gtfs_collection = GtfsCollection::from_store::<_, BigAssTableFactory>(&mut gtfs_store);
     Ok(())
 }

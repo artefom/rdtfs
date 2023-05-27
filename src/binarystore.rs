@@ -411,24 +411,6 @@ where
         hmjoin,
         current_partition: 0,
     })
-
-    // let mut reader_iter1 = reader1.iter();
-    // let mut reader_iter2 = reader2.iter();
-
-    // // We're guaratneed to have next partition here since num_partitions
-    // // is greater than 0
-    // let partition1 = reader_iter1.next_partition()?.unwrap();
-    // let partition2 = reader_iter2.next_partition()?.unwrap();
-
-    // let hmjoin = HashMapJoin::from_partitions(partition1, partition2);
-    // // Return partitioned join reader
-    // Ok(JoinReader {
-    //     reader1: reader_iter1,
-    //     reader2: reader_iter2,
-    //     key1: key1,
-    //     key2: key2,
-    //     hmjoin,
-    // })
 }
 
 impl<'r, H, K1, V1, K2, V2> JoinReader<'r, H, K1, V1, K2, V2>
