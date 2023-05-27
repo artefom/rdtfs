@@ -2,7 +2,7 @@ use std::{
     collections::{hash_map::DefaultHasher, HashMap, HashSet},
     fs::{File, OpenOptions},
     hash::{Hash, Hasher},
-    io::{BufReader, Read, Write},
+    io::BufReader,
     marker::PhantomData,
     path::PathBuf,
 };

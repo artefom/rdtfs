@@ -1,13 +1,11 @@
 use std::{
-    fs::{OpenOptions},
-    hash::{Hasher},
+    fs::OpenOptions,
     io::{Read, Write},
     path::PathBuf,
 };
 
 use anyhow::{Context, Result};
 use serde::{de::DeserializeOwned, Serialize};
-
 
 pub struct BinaryWriter {
     path: PathBuf,
