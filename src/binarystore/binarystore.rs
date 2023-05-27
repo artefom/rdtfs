@@ -1,6 +1,7 @@
 use std::{
     fs::OpenOptions,
     io::{Read, Write},
+    marker::PhantomData,
     path::PathBuf,
 };
 
@@ -46,31 +47,32 @@ impl BinaryWriter {
     }
 }
 
-pub struct BinaryReader<R: Read> {
+pub struct BinaryReader<R: Read, T: DeserializeOwned> {
     reader: R,
+    _phantom: PhantomData<T>,
 }
 
-impl<R: Read> BinaryReader<R> {
+impl<R: Read, T: DeserializeOwned> BinaryReader<R, T> {
     pub fn new(reader: R) -> Self {
-        BinaryReader { reader }
+        BinaryReader {
+            reader,
+            _phantom: PhantomData,
+        }
     }
 }
 
-impl<R: Read> BinaryReader<R> {
-    pub fn read_one<D: DeserializeOwned>(&mut self) -> Result<Option<D>> {
-        // let num_bytes = bincode::deserialize_from(&mut self.reader)?;
+impl<R: Read, T: DeserializeOwned> Iterator for BinaryReader<R, T> {
+    type Item = bincode::Result<T>;
 
-        let object = match bincode::deserialize_from(&mut self.reader) {
-            Ok(value) => Ok(value),
-            Err(err) => {
-                if let bincode::ErrorKind::Io(_) = *err {
-                    return Ok(None);
-                } else {
-                    Err(err)
-                }
-            }
-        }?;
+    fn next(&mut self) -> Option<Self::Item> {
+        let object = bincode::deserialize_from::<_, T>(&mut self.reader);
 
-        Ok(Some(object))
+        match object {
+            Ok(value) => Some(Ok(value)),
+            Err(err) => match *err {
+                bincode::ErrorKind::Io(_) => None, // Finished reading file
+                _ => Some(Err(err)),
+            },
+        }
     }
 }
