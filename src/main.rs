@@ -2,21 +2,15 @@
 // #![allow(dead_code)]
 // #![allow(unused_variables)]
 
-use std::{
-    collections::HashMap,
-    hash::Hash,
-    io::{BufRead, Read},
-    time::Instant,
-};
+use std::{collections::HashMap, time::Instant};
 
 use bigasstable::BigAssTable;
 
-use binarystore::{join, PartitionedReader, PartitionedStoreWriter};
-use csv::CsvTableReader;
-use gtfs::{GtfsFile, GtfsStore, GtfsZipStore, Pushable, StopTime, TableFacory, Trip};
+use binarystore::join;
 
-use anyhow::{Context, Result};
-use serde::{de::DeserializeOwned, Serialize};
+use gtfs::{GtfsStore, GtfsZipStore, Pushable, StopTime, TableFacory, Trip};
+
+use anyhow::Result;
 
 use crate::binarystore::Partitionable;
 
