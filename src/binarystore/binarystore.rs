@@ -34,9 +34,6 @@ impl BinaryWriter {
     }
 
     pub fn flush(&mut self) -> Result<()> {
-        if self.buf.len() == 0 {
-            return Ok(());
-        };
         let mut file = OpenOptions::new()
             .append(true)
             .create(true)
