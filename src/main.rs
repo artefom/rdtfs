@@ -2,15 +2,23 @@
 // #![allow(dead_code)]
 // #![allow(unused_variables)]
 
-use std::{collections::HashMap, hash::Hash, time::Instant};
+use std::{
+    collections::HashMap,
+    hash::Hash,
+    io::{BufRead, Read},
+    time::Instant,
+};
 
 use bigasstable::BigAssTable;
 
 use binarystore::{join, PartitionedReader, PartitionedStoreWriter};
+use csv::CsvTableReader;
 use gtfs::{GtfsFile, GtfsStore, GtfsZipStore, Pushable, StopTime, TableFacory, Trip};
 
 use anyhow::{Context, Result};
 use serde::{de::DeserializeOwned, Serialize};
+
+use crate::binarystore::Partitionable;
 
 mod gtfs;
 
@@ -37,42 +45,22 @@ impl TableFacory for BigAssTableFactory {
     }
 }
 
-fn partition<'a, G, D, K, H>(
-    store: &mut G,
-    num_partitions: usize,
-    key: K,
-) -> Result<PartitionedReader<D>>
-where
-    G: GtfsStore,
-    D: Serialize + DeserializeOwned + GtfsFile,
-    K: Fn(&D) -> H,
-    H: Hash + Eq + Clone,
-{
-    let reader = store.get_table_reader::<D>()?;
-
-    let mut table = PartitionedStoreWriter::new(num_partitions, key)?;
-
-    for item in reader {
-        let item = item.context("Could not read item")?;
-        table.write(&item)?;
-    }
-
-    table.into_reader()
-}
-
 fn main() -> Result<()> {
     env_logger::init_from_env(
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
 
-    // let filename = "/Users/artef/Downloads/ntra_import_latest_ntra-in.gtfs.txt.zip";
-    let filename = "/Users/artef/dev/dtfs/local/CATA.gtfs.txt.zip";
+    let filename = "/Users/artef/Downloads/ntra_import_latest_ntra-in.gtfs.txt.zip";
+    // let filename = "/Users/artef/dev/dtfs/local/CATA.gtfs.txt.zip";
 
     let mut gtfs_store = GtfsZipStore::from_file(filename);
 
     let trip_partition_start = Instant::now();
 
-    let trips = partition(&mut gtfs_store, 10, |x: &Trip| x.route_id.clone())?;
+    let trips = gtfs_store
+        .get_table_reader()?
+        .map(|x| x.unwrap())
+        .disk_partition(10, |x: &Trip| x.route_id.clone())?;
 
     let trip_partition_end = Instant::now();
 
@@ -98,9 +86,12 @@ fn main() -> Result<()> {
 
     let stop_times_partition_start = Instant::now();
 
-    let stop_times = partition(&mut gtfs_store, 10, |x: &StopTime| {
-        trip_id_x_route_id.get(&x.trip_id).unwrap().clone()
-    })?;
+    let stop_times = gtfs_store
+        .get_table_reader()?
+        .map(|x| x.unwrap())
+        .disk_partition(10, |x: &StopTime| {
+            trip_id_x_route_id.get(&x.trip_id).unwrap().clone()
+        })?;
 
     let stop_times_partition_end = Instant::now();
 
@@ -108,12 +99,7 @@ fn main() -> Result<()> {
 
     let join_start = Instant::now();
 
-    let joined = join(
-        &stop_times,
-        &trips,
-        |x| trip_id_x_route_id.get(&x.trip_id).unwrap().clone(),
-        |x| x.route_id.clone(),
-    )?;
+    let joined = join(&stop_times, &trips)?;
 
     let mut count = 0;
     for _ in joined {

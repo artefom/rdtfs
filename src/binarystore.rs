@@ -101,7 +101,7 @@ fn calculate_hash<T: Hash>(t: T) -> u64 {
 impl<'a, S, H, K> PartitionedStoreWriter<S, H, K>
 where
     S: Serialize + DeserializeOwned,
-    H: Hash + Eq,
+    H: Hash + Eq + Serialize + DeserializeOwned,
     K: Fn(&S) -> H,
 {
     pub fn new(n_partitions: usize, key: K) -> Result<Self> {
@@ -126,11 +126,15 @@ where
 
     pub fn write(&mut self, obj: &S) -> Result<()> {
         let key_obj = (self.key)(obj);
-        let partition_id: usize = (calculate_hash(key_obj) % (self.partitions.len() as u64))
+        let partition_id: usize = (calculate_hash(&key_obj) % (self.partitions.len() as u64))
             .try_into()
             .unwrap();
 
         let target_partition = &mut self.partitions[partition_id];
+
+        target_partition
+            .write_one(&key_obj)
+            .context("Could not write key into partition")?;
 
         target_partition
             .write_one(obj)
@@ -147,7 +151,7 @@ where
         }
         Ok(())
     }
-    pub fn into_reader(mut self) -> Result<PartitionedReader<S>> {
+    pub fn into_reader(mut self) -> Result<PartitionedReader<H, S>> {
         // Flush all pending data
         self.flush_all()?;
 
@@ -163,40 +167,46 @@ where
             total_count: self.num_written,
             _dir: self.dir,
             _phantom: PhantomData,
+            _phantom_key: PhantomData,
         })
     }
 }
 
-pub struct PartitionedReader<D>
+pub struct PartitionedReader<H, D>
 where
+    H: DeserializeOwned,
     D: DeserializeOwned,
 {
     partitions: Vec<PathBuf>,
     total_count: usize,
     _dir: TempDir,
     _phantom: PhantomData<D>,
+    _phantom_key: PhantomData<H>,
 }
 
-pub struct PartitionedReaderIter<'a, D>
+pub struct PartitionedReaderIter<'a, H, D>
 where
+    H: DeserializeOwned,
     D: DeserializeOwned,
 {
-    partition_reader: &'a PartitionedReader<D>,
+    partition_reader: &'a PartitionedReader<H, D>,
     current_partition: usize,
-    current_partition_reader: PartitionReader<D>,
+    current_partition_reader: PartitionReader<H, D>,
 }
 
-impl<'a, D> PartitionedReaderIter<'a, D>
+impl<'a, H, D> PartitionedReaderIter<'a, H, D>
 where
+    H: DeserializeOwned,
     D: DeserializeOwned,
 {
-    fn open_or_empty(partition: &PathBuf) -> PartitionReader<D> {
+    fn open_or_empty(partition: &PathBuf) -> PartitionReader<H, D> {
         let file = match OpenOptions::new().read(true).open(partition) {
             Ok(value) => value,
             Err(_) => {
                 return PartitionReader {
                     reader: None,
                     _phantom: PhantomData,
+                    _phantom_key: PhantomData,
                 }
             }
         };
@@ -204,12 +214,14 @@ where
         PartitionReader {
             reader: Some(BinaryReader::new(BufReader::new(file))),
             _phantom: PhantomData,
+            _phantom_key: PhantomData,
         }
     }
 }
 
-impl<'a, D> Iterator for PartitionedReaderIter<'a, D>
+impl<'a, H, D> Iterator for PartitionedReaderIter<'a, H, D>
 where
+    H: DeserializeOwned,
     D: DeserializeOwned,
 {
     type Item = Result<D>;
@@ -217,7 +229,10 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.current_partition_reader.next() {
-                Some(value) => return Some(value),
+                Some(value) => match value {
+                    Ok((_, value)) => return Some(Ok(value)),
+                    Err(err) => return Some(Err(err)),
+                },
                 None => {
                     self.current_partition += 1;
                     match self.partition_reader.get_partition(self.current_partition) {
@@ -231,11 +246,12 @@ where
     }
 }
 
-impl<D> PartitionedReader<D>
+impl<H, D> PartitionedReader<H, D>
 where
+    H: DeserializeOwned,
     D: DeserializeOwned,
 {
-    pub fn get_partition(&self, index: usize) -> Option<PartitionReader<D>> {
+    pub fn get_partition(&self, index: usize) -> Option<PartitionReader<H, D>> {
         let Some(partition_file) =self.partitions.get(index) else {
             return None
         };
@@ -247,7 +263,7 @@ where
         return self.total_count;
     }
 
-    pub fn iter(&self) -> PartitionedReaderIter<D> {
+    pub fn iter(&self) -> PartitionedReaderIter<H, D> {
         // There should be at least one partition
         let first_parition = self.get_partition(0).unwrap();
 
@@ -259,47 +275,56 @@ where
     }
 }
 
-pub struct PartitionReader<D>
+pub struct PartitionReader<H, D>
 where
+    H: DeserializeOwned,
     D: DeserializeOwned,
 {
     reader: Option<BinaryReader<BufReader<File>>>,
     _phantom: PhantomData<D>,
+    _phantom_key: PhantomData<H>,
 }
 
-impl<D> Iterator for PartitionReader<D>
+impl<H, D> Iterator for PartitionReader<H, D>
 where
+    H: DeserializeOwned,
     D: DeserializeOwned,
 {
-    type Item = Result<D>;
+    type Item = Result<(H, D)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let Some(reader) = &mut self.reader else {
             return None
         };
 
-        match reader.read_one::<D>() {
+        let key = match reader.read_one::<H>() {
             Ok(value) => match value {
-                Some(value) => Some(Ok(value)),
-                None => None,
+                Some(value) => value,
+                None => return None,
             },
-            Err(err) => Some(Err(err)),
-        }
+            Err(err) => return Some(Err(err)),
+        };
+
+        let value: D = match reader.read_one::<D>() {
+            Ok(value) => match value {
+                Some(value) => value,
+                None => return None,
+            },
+            Err(err) => return Some(Err(err)),
+        };
+
+        Some(Ok((key, value)))
     }
 }
 
-pub struct JoinReader<'r, H, K1, V1, K2, V2>
+pub struct JoinReader<'r, H, V1, V2>
 where
-    H: Hash,
+    H: Hash + DeserializeOwned,
     V1: DeserializeOwned,
     V2: DeserializeOwned,
-    K1: Fn(&V1) -> H,
-    K2: Fn(&V2) -> H,
 {
-    reader1: &'r PartitionedReader<V1>,
-    reader2: &'r PartitionedReader<V2>,
-    key1: K1,
-    key2: K2,
+    reader1: &'r PartitionedReader<H, V1>,
+    reader2: &'r PartitionedReader<H, V2>,
     hmjoin: HashMapJoin<H, V1, V2>,
     current_partition: usize,
 }
@@ -332,19 +357,16 @@ impl<H: Hash + Eq, V1, V2> Iterator for HashMapJoin<H, V1, V2> {
     }
 }
 
-fn into_hasmap<H, I, V, K>(collection: I, key: K, keyshs: &mut HashSet<H>) -> HashMap<H, Vec<V>>
+fn into_hasmap<H, I, V>(collection: I, keyshs: &mut HashSet<H>) -> HashMap<H, Vec<V>>
 where
     H: Hash + Eq + Clone,
-    I: Iterator<Item = Result<V>>,
-    K: Fn(&V) -> H,
+    I: Iterator<Item = Result<(H, V)>>,
 {
     let mut lhs: HashMap<H, Vec<V>> = HashMap::new();
 
     // Populate lhs
     for value in collection {
-        let value = value.unwrap();
-
-        let key = key(&value).clone();
+        let (key, value) = value.unwrap();
 
         keyshs.insert(key.clone());
 
@@ -361,20 +383,16 @@ where
     lhs
 }
 
-impl<H: Hash + Eq + Clone, V1: DeserializeOwned, V2: DeserializeOwned> HashMapJoin<H, V1, V2> {
-    pub fn from_partitions<K1, K2>(
-        partition1: PartitionReader<V1>,
-        partition2: PartitionReader<V2>,
-        key1: &K1,
-        key2: &K2,
-    ) -> Self
-    where
-        K1: Fn(&V1) -> H,
-        K2: Fn(&V2) -> H,
-    {
+impl<H: Hash + Eq + Clone + DeserializeOwned, V1: DeserializeOwned, V2: DeserializeOwned>
+    HashMapJoin<H, V1, V2>
+{
+    pub fn from_partitions(
+        partition1: PartitionReader<H, V1>,
+        partition2: PartitionReader<H, V2>,
+    ) -> Self {
         let mut keyshs = HashSet::new();
-        let lhs = into_hasmap(partition1, key1, &mut keyshs);
-        let rhs = into_hasmap(partition2, key2, &mut keyshs);
+        let lhs = into_hasmap(partition1, &mut keyshs);
+        let rhs = into_hasmap(partition2, &mut keyshs);
         HashMapJoin {
             lhs,
             rhs,
@@ -385,41 +403,33 @@ impl<H: Hash + Eq + Clone, V1: DeserializeOwned, V2: DeserializeOwned> HashMapJo
 
 /// Join two tables by given key out-of-memory
 /// Can be used for extremely large tales
-pub fn join<'r, H, K1, V1, K2, V2>(
-    reader1: &'r PartitionedReader<V1>,
-    reader2: &'r PartitionedReader<V2>,
-    key1: K1,
-    key2: K2,
-) -> Result<JoinReader<'r, H, K1, V1, K2, V2>>
+pub fn join<'r, H, V1, V2>(
+    reader1: &'r PartitionedReader<H, V1>,
+    reader2: &'r PartitionedReader<H, V2>,
+) -> Result<JoinReader<'r, H, V1, V2>>
 where
     V1: Serialize + DeserializeOwned,
     V2: Serialize + DeserializeOwned,
-    K1: Fn(&V1) -> H,
-    K2: Fn(&V2) -> H,
-    H: Hash + Eq + Clone,
+    H: Hash + Eq + Clone + DeserializeOwned,
 {
     let partition1 = reader1.get_partition(0).unwrap();
     let partition2 = reader2.get_partition(0).unwrap();
 
-    let hmjoin = HashMapJoin::from_partitions(partition1, partition2, &key1, &key2);
+    let hmjoin = HashMapJoin::from_partitions(partition1, partition2);
 
     Ok(JoinReader {
         reader1: reader1,
         reader2: reader2,
-        key1: key1,
-        key2: key2,
         hmjoin,
         current_partition: 0,
     })
 }
 
-impl<'r, H, K1, V1, K2, V2> JoinReader<'r, H, K1, V1, K2, V2>
+impl<'r, H, V1, V2> JoinReader<'r, H, V1, V2>
 where
     V1: Serialize + DeserializeOwned,
     V2: Serialize + DeserializeOwned,
-    K1: Fn(&V1) -> H,
-    K2: Fn(&V2) -> H,
-    H: Hash + Eq + Clone,
+    H: Hash + Eq + Clone + DeserializeOwned,
 {
     fn next_hmjoin(&mut self) -> Option<HashMapJoin<H, V1, V2>> {
         self.current_partition += 1;
@@ -434,19 +444,15 @@ where
             None => unreachable!(), // This hould not exist since we're guranteed to have next partition
         };
 
-        Some(HashMapJoin::from_partitions(
-            partition1, partition2, &self.key1, &self.key2,
-        ))
+        Some(HashMapJoin::from_partitions(partition1, partition2))
     }
 }
 
-impl<'r, H, K1, V1, K2, V2> Iterator for JoinReader<'r, H, K1, V1, K2, V2>
+impl<'r, H, V1, V2> Iterator for JoinReader<'r, H, V1, V2>
 where
     V1: Serialize + DeserializeOwned,
     V2: Serialize + DeserializeOwned,
-    K1: Fn(&V1) -> H,
-    K2: Fn(&V2) -> H,
-    H: Hash + Eq + Clone,
+    H: Hash + Eq + Clone + DeserializeOwned,
 {
     type Item = (Vec<V1>, Vec<V2>);
 
@@ -469,5 +475,35 @@ where
             self.hmjoin = next_hm;
             return Some(next_value);
         }
+    }
+}
+
+pub trait Partitionable<T>
+where
+    T: Serialize + DeserializeOwned,
+{
+    fn disk_partition<H, K>(self, num_partitions: usize, key: K) -> Result<PartitionedReader<H, T>>
+    where
+        K: Fn(&T) -> H,
+        H: Hash + Eq + Clone + DeserializeOwned + Serialize;
+}
+
+impl<I, T> Partitionable<T> for I
+where
+    I: Iterator<Item = T>,
+    T: Serialize + DeserializeOwned,
+{
+    fn disk_partition<H, K>(self, num_partitions: usize, key: K) -> Result<PartitionedReader<H, T>>
+    where
+        K: Fn(&T) -> H,
+        H: Hash + Eq + Clone + DeserializeOwned + Serialize,
+    {
+        let mut table = PartitionedStoreWriter::new(num_partitions, key)?;
+
+        for item in self {
+            table.write(&item)?;
+        }
+
+        table.into_reader()
     }
 }
