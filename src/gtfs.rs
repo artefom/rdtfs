@@ -4,10 +4,11 @@ use std::{
     collections::HashMap,
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Read, Seek},
+    marker::PhantomData,
     path::Path,
 };
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 
 use indicatif::{ProgressBar, ProgressStyle};
 
@@ -656,20 +657,16 @@ impl GtfsFileType {
 pub trait GtfsStore {
     fn get_readable<'a>(&'a mut self, file_type: GtfsFileType) -> Option<Box<dyn BufRead + 'a>>;
 
-    fn scan<F, D: DeserializeOwned + GtfsFile>(&mut self, mut target: F) -> Result<()>
-    where
-        F: FnMut(D) -> (),
-    {
+    fn get_table_reader<'a, D: DeserializeOwned + GtfsFile>(
+        &'a mut self,
+    ) -> Result<CsvTableReader<Box<dyn BufRead + 'a>, D>> {
         let file_type = D::get_file_type();
         let read = self.get_readable(file_type);
         let Some(read) = read else {
                 bail!("File {} not found", file_type.file_name())
             };
         let reader = CsvTableReader::<_, D>::new(read);
-        for item in reader {
-            target(item?)
-        }
-        Ok(())
+        Ok(reader)
     }
 }
 
