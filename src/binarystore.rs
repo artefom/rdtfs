@@ -98,8 +98,7 @@ where
         }
 
         Ok(PartitionedReader {
-            partitions: partitions,
-            total_count: self.num_written,
+            partitions,
             _dir: self.dir,
             _phantom: PhantomData,
             _phantom_key: PhantomData,
@@ -113,47 +112,9 @@ where
     V: DeserializeOwned,
 {
     partitions: Vec<PathBuf>,
-    total_count: usize,
     _dir: TempDir,
     _phantom: PhantomData<V>,
     _phantom_key: PhantomData<K>,
-}
-
-pub struct PartitionedReaderIter<'a, K, V>
-where
-    K: DeserializeOwned,
-    V: DeserializeOwned,
-{
-    partition_reader: &'a PartitionedReader<K, V>,
-    current_partition: usize,
-    current_partition_reader: BinaryReader<BufReader<File>, (K, V)>,
-}
-
-impl<'a, K, V> Iterator for PartitionedReaderIter<'a, K, V>
-where
-    K: DeserializeOwned,
-    V: DeserializeOwned,
-{
-    type Item = Result<V>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            match self.current_partition_reader.next() {
-                Some(value) => {
-                    let (_, value) = value.unwrap();
-                    return Some(Ok(value));
-                }
-                None => {
-                    self.current_partition += 1;
-                    match self.partition_reader.get_partition2(self.current_partition) {
-                        Some(value) => self.current_partition_reader = value,
-                        None => return None, // Run out of partitions, nothing to iterate
-                    }
-                    continue;
-                }
-            }
-        }
-    }
 }
 
 impl<K, V> PartitionedReader<K, V>
@@ -161,7 +122,7 @@ where
     K: DeserializeOwned,
     V: DeserializeOwned,
 {
-    pub fn get_partition2(&self, index: usize) -> Option<BinaryReader<BufReader<File>, (K, V)>> {
+    pub fn get_partition(&self, index: usize) -> Option<BinaryReader<BufReader<File>, (K, V)>> {
         let Some(partition_file) =self.partitions.get(index) else {
             return None
         };
@@ -171,21 +132,6 @@ where
         let file = OpenOptions::new().read(true).open(partition_file).unwrap();
 
         Some(BinaryReader::new(BufReader::new(file)))
-    }
-
-    pub fn len(&self) -> usize {
-        return self.total_count;
-    }
-
-    pub fn iter(&self) -> PartitionedReaderIter<K, V> {
-        // There should be at least one partition
-        let first_parition = self.get_partition2(0).unwrap();
-
-        PartitionedReaderIter {
-            partition_reader: &self,
-            current_partition: 0,
-            current_partition_reader: first_parition,
-        }
     }
 }
 

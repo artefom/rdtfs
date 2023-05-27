@@ -106,7 +106,7 @@ pub struct Route {
 
 impl GtfsFile for Route {
     fn get_file_type() -> GtfsFileType {
-        return GtfsFileType::Routes;
+        GtfsFileType::Routes
     }
 }
 
@@ -125,7 +125,7 @@ pub struct Agency {
 
 impl GtfsFile for Agency {
     fn get_file_type() -> GtfsFileType {
-        return GtfsFileType::Agencies;
+        GtfsFileType::Agencies
     }
 }
 
@@ -167,7 +167,7 @@ pub struct Stop {
 
 impl GtfsFile for Stop {
     fn get_file_type() -> GtfsFileType {
-        return GtfsFileType::Stops;
+        GtfsFileType::Stops
     }
 }
 
@@ -847,7 +847,7 @@ impl<'r> Iterator for GtfsIterator<'r> {
     type Item = FullRoute;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let Some((key, (trips, stop_times))) = self.join.next() else {
+        let Some((_key, (trips, stop_times))) = self.join.next() else {
             return None
         };
 

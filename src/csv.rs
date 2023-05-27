@@ -20,19 +20,13 @@ pub struct CsvTableReader<R: Read, D: DeserializeOwned> {
     _phantom: PhantomData<D>,
 }
 
+#[derive(Default)]
 struct CsvRowBuf {
     divisions: Vec<Divisions>,
     data: String,
 }
 
-impl Default for CsvRowBuf {
-    fn default() -> Self {
-        Self {
-            divisions: Default::default(),
-            data: Default::default(),
-        }
-    }
-}
+
 
 impl<R: Read + BufRead, D: DeserializeOwned> CsvTableReader<R, D> {
     pub fn new(mut reader: R) -> Self {
@@ -88,10 +82,7 @@ impl<R: BufRead, D: DeserializeOwned> Iterator for CsvTableReader<R, D> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.read() {
-            Ok(value) => match value {
-                Some(value) => Some(Ok(value)),
-                None => None,
-            },
+            Ok(value) => value.map(Ok),
             Err(err) => Some(Err(err)),
         }
     }

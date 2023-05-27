@@ -72,8 +72,8 @@ where
     let joined = hashmap_join(partition1, partition2).into_iter();
 
     Ok(JoinReader {
-        reader1: reader1,
-        reader2: reader2,
+        reader1,
+        reader2,
         current_data: joined,
         current_partition: 0,
     })

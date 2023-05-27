@@ -2,13 +2,11 @@
 // #![allow(dead_code)]
 // #![allow(unused_variables)]
 
-use std::{collections::HashMap, hash::Hash, time::Instant};
+use std::hash::Hash;
 
-use binarystore::{Partitionable, PartitionedReader};
+use binarystore::Partitionable;
 
-use gtfs::{
-    GtfsPartitioned, GtfsStore, GtfsZipStore, PartitionedTable, StopTime, TablePartitioner, Trip,
-};
+use gtfs::{GtfsPartitioned, GtfsZipStore, TablePartitioner};
 
 use anyhow::Result;
 use serde::{de::DeserializeOwned, Serialize};
@@ -25,7 +23,7 @@ where
     V: DeserializeOwned + 'static,
 {
     fn get_partition(&self, index: usize) -> Option<Box<dyn Iterator<Item = (K, V)>>> {
-        let Some(value) = binarystore::PartitionedReader::get_partition2(&self, index) else {
+        let Some(value) = binarystore::PartitionedReader::get_partition(self, index) else {
             return None
         };
 
@@ -57,8 +55,8 @@ fn main() -> Result<()> {
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
 
-    let filename = "/Users/artef/Downloads/ntra_import_latest_ntra-in.gtfs.txt.zip";
-    // let filename = "/Users/artef/dev/dtfs/local/CATA.gtfs.txt.zip";
+    // let filename = "/Users/artef/Downloads/ntra_import_latest_ntra-in.gtfs.txt.zip";
+    let filename = "/Users/artef/dev/dtfs/local/CATA.gtfs.txt.zip";
 
     let mut gtfs_store = GtfsZipStore::from_file(filename);
 

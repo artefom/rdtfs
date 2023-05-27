@@ -41,10 +41,10 @@ impl<'de> CsvRowDeserializer<'_, 'de> {
         let Some(value) = self.item.get(next_header) else {
             return false;
         };
-        if value.len() == 0 {
+        if value.is_empty() {
             return false;
         };
-        return true;
+        true
     }
 
     fn get_value(&self) -> Result<&'de str, Error> {
@@ -54,7 +54,7 @@ impl<'de> CsvRowDeserializer<'_, 'de> {
         let Some(value) = self.item.get(next_header) else {
             return Err(Error::Message(format!("Expected value, column {} not found", next_header)));
         };
-        if value.len() == 0 {
+        if value.is_empty() {
             return Err(Error::Message(format!(
                 "Expected value for column {} got empty string",
                 next_header
@@ -70,7 +70,7 @@ impl<'de> CsvRowDeserializer<'_, 'de> {
         let Some(value) = self.item.get_string(next_header) else {
             return Err(Error::Message(format!("Expected value, column {} not found", next_header)));
         };
-        if value.len() == 0 {
+        if value.is_empty() {
             return Err(Error::Message(format!(
                 "Expected value for column {} got empty string",
                 next_header
@@ -87,9 +87,9 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
     where
         V: Visitor<'de>,
     {
-        return Err(Error::Message(
+        Err(Error::Message(
             "Deserializing any is not supported".to_string(),
-        ));
+        ))
     }
 
     fn deserialize_bool<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
@@ -330,7 +330,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut CsvRowDeserializer<'_, 'de> {
     {
         let rec_visitor = RecordVisitor {
             de: &mut *self,
-            fields: fields,
+            fields,
             current_field: 0,
         };
 
@@ -493,7 +493,7 @@ pub fn parse_csv_line<'a, 'b>(line: &'a str, out: &'b mut Vec<Divisions>) {
     }
 
     if field_end > 0 && &line[field_end - 1..field_end] == "\n" && field_end > field_start {
-        field_end = field_end - 1
+        field_end -= 1
     };
 
     if out.len() <= current_field {
@@ -555,9 +555,9 @@ pub fn deserialize_item<'a, 'de, D: Deserialize<'de>>(
     data: &'de str,
 ) -> Result<D, Error> {
     let item = CsvRow::<'a, 'de> {
-        header: header,
+        header,
         divisions: record,
-        data: data,
+        data,
     };
 
     let mut deserializer = CsvRowDeserializer {
