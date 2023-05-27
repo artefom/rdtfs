@@ -1,15 +1,13 @@
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap, HashSet},
-    fs::{File, OpenOptions},
-    hash::{Hash, Hasher},
-    io::{BufReader, Read, Write},
-    marker::PhantomData,
+    fs::{OpenOptions},
+    hash::{Hasher},
+    io::{Read, Write},
     path::PathBuf,
 };
 
 use anyhow::{Context, Result};
 use serde::{de::DeserializeOwned, Serialize};
-use tempfile::{tempdir, TempDir};
+
 
 pub struct BinaryWriter {
     path: PathBuf,
