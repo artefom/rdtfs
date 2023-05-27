@@ -777,12 +777,3 @@ impl GtfsStore for GtfsZipStore {
         Some(progress_reader)
     }
 }
-
-pub trait Pushable<I> {
-    fn push(&mut self, item: I);
-    fn length(&self) -> usize;
-}
-
-pub trait TableFacory {
-    fn new<I: 'static>() -> Box<dyn Pushable<I>>;
-}
