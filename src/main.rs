@@ -4,40 +4,17 @@
 
 use std::{collections::HashMap, time::Instant};
 
-use bigasstable::BigAssTable;
+use binarystore::{join, Partitionable};
 
-use binarystore::join;
-
-use gtfs::{GtfsStore, GtfsZipStore, Pushable, StopTime, TableFacory, Trip};
+use gtfs::{GtfsStore, GtfsZipStore, StopTime, Trip};
 
 use anyhow::Result;
-
-use crate::binarystore::Partitionable;
 
 mod gtfs;
 
 mod csv;
 
-mod bigasstable;
 mod binarystore;
-
-struct BigAssTableFactory {}
-
-impl<I> Pushable<I> for BigAssTable<I> {
-    fn push(&mut self, item: I) {
-        BigAssTable::push(self, item);
-    }
-
-    fn length(&self) -> usize {
-        BigAssTable::length(self)
-    }
-}
-
-impl TableFacory for BigAssTableFactory {
-    fn new<I: 'static>() -> Box<dyn gtfs::Pushable<I>> {
-        Box::new(BigAssTable::<I>::new())
-    }
-}
 
 fn main() -> Result<()> {
     env_logger::init_from_env(
