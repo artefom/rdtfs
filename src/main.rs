@@ -115,10 +115,11 @@ fn main() -> Result<()> {
         |x| x.route_id.clone(),
     )?;
 
-    for item in joined {
-        println!("{:?}", item);
-        break;
+    let mut count = 0;
+    for _ in joined {
+        count += 1;
     }
+    println!("Total joined: {}", count);
 
     let join_end = Instant::now();
 
@@ -138,6 +139,31 @@ fn main() -> Result<()> {
     println!("Total time: {:?}", join_end - trip_partition_start);
 
     println!("Done");
+
+    // For CATA
+    // Number of trips: 4177
+    // Iterating trips
+    // Number of trips: 4177
+    // Partitioning stop times
+    // Number of stop times: 19419
+    // Total joined: 2047
+    // Partition trips took 12.234875ms
+    // Trips indexing took 2.882292ms
+    // Stop times partitioning took 40.768125ms
+    // Join took 10.867459ms
+    // Total time: 66.766709ms
+
+    // Number of trips: 800752
+    // Iterating trips
+    // Number of trips: 800752
+    // Partitioning stop times
+    // Number of stop times: 15377055
+    // Total joined: 2558
+    // Partition trips took 1.218865333s
+    // Trips indexing took 351.40575ms
+    // Stop times partitioning took 19.062396834s
+    // Join took 7.349318416s
+    // Total time: 27.982005208s
 
     Ok(())
 }

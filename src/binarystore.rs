@@ -422,6 +422,7 @@ where
     H: Hash + Eq + Clone,
 {
     fn next_hmjoin(&mut self) -> Option<HashMapJoin<H, V1, V2>> {
+        self.current_partition += 1;
         // Hm join is drained, create a new one if possible
         let partition1 = match self.reader1.get_partition(self.current_partition) {
             Some(value) => value,
