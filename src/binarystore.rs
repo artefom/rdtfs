@@ -1,5 +1,5 @@
 use std::{
-    collections::hash_map::{self, DefaultHasher},
+    collections::hash_map::DefaultHasher,
     fs::{File, OpenOptions},
     hash::{Hash, Hasher},
     io::BufReader,
@@ -13,10 +13,9 @@ use tempfile::{tempdir, TempDir};
 
 use binarystore::BinaryWriter;
 
-use self::{binarystore::BinaryReader, hasmap_join::hashmap_join};
+use self::binarystore::BinaryReader;
 
 mod binarystore;
-mod hasmap_join;
 
 struct PartitionedWriter<V, K>
 where
@@ -146,7 +145,7 @@ where
                 }
                 None => {
                     self.current_partition += 1;
-                    match self.partition_reader.get_partition(self.current_partition) {
+                    match self.partition_reader.get_partition2(self.current_partition) {
                         Some(value) => self.current_partition_reader = value,
                         None => return None, // Run out of partitions, nothing to iterate
                     }
@@ -162,7 +161,7 @@ where
     K: DeserializeOwned,
     V: DeserializeOwned,
 {
-    fn get_partition(&self, index: usize) -> Option<BinaryReader<BufReader<File>, (K, V)>> {
+    pub fn get_partition2(&self, index: usize) -> Option<BinaryReader<BufReader<File>, (K, V)>> {
         let Some(partition_file) =self.partitions.get(index) else {
             return None
         };
@@ -180,94 +179,12 @@ where
 
     pub fn iter(&self) -> PartitionedReaderIter<K, V> {
         // There should be at least one partition
-        let first_parition = self.get_partition(0).unwrap();
+        let first_parition = self.get_partition2(0).unwrap();
 
         PartitionedReaderIter {
             partition_reader: &self,
             current_partition: 0,
             current_partition_reader: first_parition,
-        }
-    }
-}
-
-pub struct JoinReader<'r, K, V1, V2>
-where
-    K: Hash + DeserializeOwned,
-    V1: DeserializeOwned,
-    V2: DeserializeOwned,
-{
-    reader1: &'r PartitionedReader<K, V1>,
-    reader2: &'r PartitionedReader<K, V2>,
-    current_data: hash_map::IntoIter<K, (Vec<V1>, Vec<V2>)>,
-    current_partition: usize,
-}
-
-/// Join two tables by given key out-of-memory
-/// Can be used for extremely large tales
-pub fn join<'r, K, V1, V2>(
-    reader1: &'r PartitionedReader<K, V1>,
-    reader2: &'r PartitionedReader<K, V2>,
-) -> Result<JoinReader<'r, K, V1, V2>>
-where
-    V1: Serialize + DeserializeOwned,
-    V2: Serialize + DeserializeOwned,
-    K: Hash + Eq + Clone + DeserializeOwned,
-{
-    let partition1 = reader1.get_partition(0).unwrap().map(|x| x.unwrap());
-    let partition2 = reader2.get_partition(0).unwrap().map(|x| x.unwrap());
-
-    let joined = hashmap_join(partition1, partition2).into_iter();
-
-    Ok(JoinReader {
-        reader1: reader1,
-        reader2: reader2,
-        current_data: joined,
-        current_partition: 0,
-    })
-}
-
-impl<'r, K, V1, V2> Iterator for JoinReader<'r, K, V1, V2>
-where
-    V1: Serialize + DeserializeOwned,
-    V2: Serialize + DeserializeOwned,
-    K: Hash + Eq + Clone + DeserializeOwned,
-{
-    type Item = (K, (Vec<V1>, Vec<V2>));
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // Get next value and return if it exists
-        match self.current_data.next() {
-            Some(value) => return Some(value),
-            None => (),
-        };
-
-        loop {
-            self.current_partition += 1;
-
-            let Some(partition1) = self
-                .reader1
-                .get_partition(self.current_partition) else {
-                    return None
-                };
-
-            let Some(partition2) = self
-                .reader2
-                .get_partition(self.current_partition) else {
-                    return None
-                };
-
-            let mut joined = hashmap_join(
-                partition1.map(|x| x.unwrap()),
-                partition2.map(|x| x.unwrap()),
-            )
-            .into_iter();
-
-            let Some(next_value) = joined.next() else {
-                continue;
-            };
-
-            self.current_data = joined;
-            return Some(next_value);
         }
     }
 }

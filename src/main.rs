@@ -2,19 +2,55 @@
 // #![allow(dead_code)]
 // #![allow(unused_variables)]
 
-use std::{collections::HashMap, time::Instant};
+use std::{collections::HashMap, hash::Hash, time::Instant};
 
-use binarystore::{join, Partitionable};
+use binarystore::{Partitionable, PartitionedReader};
 
-use gtfs::{GtfsStore, GtfsZipStore, StopTime, Trip};
+use gtfs::{
+    GtfsPartitioned, GtfsStore, GtfsZipStore, PartitionedTable, StopTime, TablePartitioner, Trip,
+};
 
 use anyhow::Result;
+use serde::{de::DeserializeOwned, Serialize};
 
 mod gtfs;
 
 mod csv;
 
 mod binarystore;
+
+impl<K, V> gtfs::PartitionedTable<K, V> for binarystore::PartitionedReader<K, V>
+where
+    K: DeserializeOwned + 'static,
+    V: DeserializeOwned + 'static,
+{
+    fn get_partition(&self, index: usize) -> Option<Box<dyn Iterator<Item = (K, V)>>> {
+        let Some(value) = binarystore::PartitionedReader::get_partition2(&self, index) else {
+            return None
+        };
+
+        Some(Box::new(value.map(|x| x.unwrap())))
+    }
+}
+
+struct BinaryPartitioner;
+
+impl TablePartitioner for BinaryPartitioner {
+    fn partition<I, F, K, V>(
+        iter: I,
+        num_partitions: usize,
+        key: F,
+    ) -> Box<dyn gtfs::PartitionedTable<K, V>>
+    where
+        I: Iterator<Item = V>,
+        F: Fn(&V) -> K,
+        V: Serialize + DeserializeOwned + 'static,
+        K: Serialize + DeserializeOwned + Hash + Eq + Clone + 'static,
+    {
+        let partitioned = iter.disk_partition(num_partitions, key).unwrap();
+        Box::new(partitioned)
+    }
+}
 
 fn main() -> Result<()> {
     env_logger::init_from_env(
@@ -26,76 +62,21 @@ fn main() -> Result<()> {
 
     let mut gtfs_store = GtfsZipStore::from_file(filename);
 
-    let trip_partition_start = Instant::now();
+    let gtfs_partitioned = GtfsPartitioned::from_store::<_, BinaryPartitioner>(&mut gtfs_store);
 
-    let trips = gtfs_store
-        .get_table_reader()?
-        .map(|x| x.unwrap())
-        .disk_partition(10, |x: &Trip| x.route_id.clone())?;
+    println!("Iterating");
 
-    let trip_partition_end = Instant::now();
-
-    println!("Number of trips: {}", trips.len());
-
-    let mut trip_id_x_route_id: HashMap<String, String> = HashMap::new();
-
-    println!("Iterating trips");
-
-    let trip_iteration_start = Instant::now();
-
-    for trip in trips.iter() {
-        let trip = trip.unwrap();
-
-        trip_id_x_route_id.insert(trip.trip_id, trip.route_id);
+    for route in gtfs_partitioned.iter() {
+        if route.stop_times.len() > 10 {
+            for trip in route.trips {
+                println!("{:?}", trip);
+            }
+            for stop_time in route.stop_times {
+                println!("{:?}", stop_time);
+            }
+            break;
+        }
     }
-
-    let trip_iteration_end = Instant::now();
-
-    println!("Number of trips: {}", trip_id_x_route_id.len());
-
-    println!("Partitioning stop times");
-
-    let stop_times_partition_start = Instant::now();
-
-    let stop_times = gtfs_store
-        .get_table_reader()?
-        .map(|x| x.unwrap())
-        .disk_partition(10, |x: &StopTime| {
-            trip_id_x_route_id.get(&x.trip_id).unwrap().clone()
-        })?;
-
-    let stop_times_partition_end = Instant::now();
-
-    println!("Number of stop times: {}", stop_times.len());
-
-    let join_start = Instant::now();
-
-    let joined = join(&stop_times, &trips)?;
-
-    let mut count = 0;
-    for _ in joined {
-        count += 1;
-    }
-    println!("Total joined: {}", count);
-
-    let join_end = Instant::now();
-
-    println!(
-        "Partition trips took {:?}",
-        trip_partition_end - trip_partition_start
-    );
-    println!(
-        "Trips indexing took {:?}",
-        trip_iteration_end - trip_iteration_start
-    );
-    println!(
-        "Stop times partitioning took {:?}",
-        stop_times_partition_end - stop_times_partition_start
-    );
-    println!("Join took {:?}", join_end - join_start);
-    println!("Total time: {:?}", join_end - trip_partition_start);
-
-    println!("Done");
 
     // For CATA
     // Number of trips: 4177

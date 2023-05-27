@@ -3,6 +3,7 @@
 use std::{
     collections::HashMap,
     fs::{File, OpenOptions},
+    hash::Hash,
     io::{BufRead, BufReader, Read, Seek},
     path::Path,
 };
@@ -17,6 +18,11 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use zip::ZipArchive;
 
 use crate::csv::CsvTableReader;
+
+use self::join::JoinReader;
+
+mod join;
+pub use join::PartitionedTable;
 
 pub trait GtfsFile {
     fn get_file_type() -> GtfsFileType;
@@ -775,5 +781,76 @@ impl GtfsStore for GtfsZipStore {
         let progress_reader = Box::new(ProgressReader::new(BufReader::new(res), total_size));
 
         Some(progress_reader)
+    }
+}
+
+pub trait TablePartitioner {
+    fn partition<I, F, K, V>(
+        iter: I,
+        num_partitions: usize,
+        key: F,
+    ) -> Box<dyn join::PartitionedTable<K, V>>
+    where
+        I: Iterator<Item = V>,
+        F: Fn(&V) -> K,
+        K: Hash + Eq + Clone + Serialize + DeserializeOwned + 'static,
+        V: Serialize + DeserializeOwned + 'static;
+}
+
+pub struct GtfsPartitioned {
+    stop_times: Box<dyn PartitionedTable<String, StopTime>>,
+    trips: Box<dyn PartitionedTable<String, Trip>>,
+}
+
+impl GtfsPartitioned {
+    pub fn from_store<S: GtfsStore, P: TablePartitioner>(store: &mut S) -> Self {
+        let num_partitions: usize = 10;
+
+        let stop_times = P::partition(
+            store
+                .get_table_reader::<StopTime>()
+                .unwrap()
+                .map(|x| x.unwrap()),
+            num_partitions,
+            |stop_time| stop_time.trip_id.clone(),
+        );
+
+        let trips = P::partition(
+            store
+                .get_table_reader::<Trip>()
+                .unwrap()
+                .map(|x| x.unwrap()),
+            num_partitions,
+            |trip| trip.trip_id.clone(),
+        );
+
+        GtfsPartitioned { stop_times, trips }
+    }
+
+    pub fn iter<'a>(&'a self) -> GtfsIterator<'a> {
+        let join = join::join(&self.trips, &self.stop_times).unwrap();
+
+        GtfsIterator { join }
+    }
+}
+
+pub struct GtfsIterator<'r> {
+    join: JoinReader<'r, String, Trip, StopTime>,
+}
+
+pub struct FullRoute {
+    pub trips: Vec<Trip>,
+    pub stop_times: Vec<StopTime>,
+}
+
+impl<'r> Iterator for GtfsIterator<'r> {
+    type Item = FullRoute;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let Some((key, (trips, stop_times))) = self.join.next() else {
+            return None
+        };
+
+        Some(FullRoute { trips, stop_times })
     }
 }
