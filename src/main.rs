@@ -9,6 +9,7 @@ use binarystore::{join, Partitionable};
 use gtfs::{GtfsStore, GtfsZipStore, StopTime, Trip};
 
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 
 mod gtfs;
 
@@ -16,10 +17,18 @@ mod csv;
 
 mod binarystore;
 
+#[derive(Serialize, Deserialize)]
+struct StopTimeWithRouteId {
+    stop_time: StopTime,
+    route_id: String,
+}
+
 fn main() -> Result<()> {
     env_logger::init_from_env(
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
+
+    let num_partitions = 10;
 
     let filename = "/Users/artef/Downloads/ntra_import_latest_ntra-in.gtfs.txt.zip";
     // let filename = "/Users/artef/dev/dtfs/local/CATA.gtfs.txt.zip";
@@ -28,28 +37,24 @@ fn main() -> Result<()> {
 
     let trip_partition_start = Instant::now();
 
+    let mut trip_id_x_route_id: HashMap<String, String> = HashMap::new();
+
     let trips = gtfs_store
         .get_table_reader()?
-        .map(|x| x.unwrap())
-        .disk_partition(10, |x: &Trip| x.route_id.clone())?;
+        .map(|x| {
+            let trip: Trip = x.unwrap();
+
+            trip_id_x_route_id.insert(trip.trip_id.clone(), trip.route_id.clone());
+
+            trip
+        })
+        .disk_partition(num_partitions, |x: &Trip| &x.route_id)?;
 
     let trip_partition_end = Instant::now();
 
     println!("Number of trips: {}", trips.len());
 
-    let mut trip_id_x_route_id: HashMap<String, String> = HashMap::new();
-
     println!("Iterating trips");
-
-    let trip_iteration_start = Instant::now();
-
-    for trip in trips.iter() {
-        let trip = trip.unwrap();
-
-        trip_id_x_route_id.insert(trip.trip_id, trip.route_id);
-    }
-
-    let trip_iteration_end = Instant::now();
 
     println!("Number of trips: {}", trip_id_x_route_id.len());
 
@@ -59,10 +64,15 @@ fn main() -> Result<()> {
 
     let stop_times = gtfs_store
         .get_table_reader()?
-        .map(|x| x.unwrap())
-        .disk_partition(10, |x: &StopTime| {
-            trip_id_x_route_id.get(&x.trip_id).unwrap().clone()
-        })?;
+        .map(|x| {
+            let stop_time: StopTime = x.unwrap();
+            let route_id = trip_id_x_route_id.get(&stop_time.trip_id).unwrap().clone();
+            StopTimeWithRouteId {
+                stop_time,
+                route_id,
+            }
+        })
+        .disk_partition(num_partitions, |x: &StopTimeWithRouteId| &x.route_id)?;
 
     let stop_times_partition_end = Instant::now();
 
@@ -83,10 +93,6 @@ fn main() -> Result<()> {
     println!(
         "Partition trips took {:?}",
         trip_partition_end - trip_partition_start
-    );
-    println!(
-        "Trips indexing took {:?}",
-        trip_iteration_end - trip_iteration_start
     );
     println!(
         "Stop times partitioning took {:?}",
