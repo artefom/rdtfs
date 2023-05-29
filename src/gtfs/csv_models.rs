@@ -1,15 +1,12 @@
-use std::{
-    hash::Hash,
-};
+/// Models for csv serialization/deserialization
+///
+use std::hash::Hash;
 
-use anyhow::{Result};
-
-
+use anyhow::Result;
 
 use serde::{Deserialize, Serialize};
 
 use serde_repr::{Deserialize_repr, Serialize_repr};
-
 
 pub trait GtfsFile {
     fn get_file_type() -> GtfsFileType;
@@ -567,7 +564,7 @@ impl GtfsFile for TicketingDeepLink {
     }
 }
 
-#[derive(Eq, Hash, PartialEq, Clone, Copy)]
+#[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
 pub enum GtfsFileType {
     Agencies,
     FeedInfos,
@@ -591,31 +588,6 @@ pub enum GtfsFileType {
 }
 
 impl GtfsFileType {
-    pub fn file_name(&self) -> &str {
-        use GtfsFileType::*;
-        match self {
-            Agencies => "agency",
-            FeedInfos => "feed_info",
-            Stops => "stops",
-            Routes => "routes",
-            Trips => "trips",
-            StopTimes => "stop_times",
-            Calendars => "calendar",
-            CalendarDates => "calendar_dates",
-            TicketingDeepLinks => "ticketing_deep_links",
-            TicketingIdentifiers => "ticketing_identifiers",
-            FareAttributes => "fare_attributes",
-            FareRules => "fare_rules",
-            Shapes => "shapes",
-            Frequencies => "frequencies",
-            Transfers => "transfers",
-            Pathways => "pathways",
-            Levels => "levels",
-            Translations => "translations",
-            Attributions => "attributions",
-        }
-    }
-
     pub fn from_filename(name: &str) -> Option<Self> {
         use GtfsFileType::*;
         Some(match name {

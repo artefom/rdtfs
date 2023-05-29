@@ -3,13 +3,13 @@ use std::io::{BufRead, Read};
 use indicatif::{ProgressBar, ProgressStyle};
 
 /// Reads data and reports progress
-pub struct ProgressReader<F> {
-    file: F,
+pub struct ProgressReader<R> {
+    read: R,
     bar: ProgressBar,
 }
 
-impl<F> ProgressReader<F> {
-    pub fn new(file: F, total_size: u64) -> Self {
+impl<R> ProgressReader<R> {
+    pub fn new(file: R, total_size: u64) -> Self {
         let progress = ProgressBar::new(total_size);
 
         progress.set_style(
@@ -21,7 +21,7 @@ impl<F> ProgressReader<F> {
         );
 
         ProgressReader {
-            file,
+            read: file,
             bar: progress,
         }
     }
@@ -29,13 +29,13 @@ impl<F> ProgressReader<F> {
 
 impl<F: Read> Read for ProgressReader<F> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.file.read(buf)
+        self.read.read(buf)
     }
 }
 
 impl<F: BufRead> BufRead for ProgressReader<F> {
     fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
-        self.file.fill_buf()
+        self.read.fill_buf()
     }
 
     fn consume(&mut self, amt: usize) {
@@ -44,6 +44,6 @@ impl<F: BufRead> BufRead for ProgressReader<F> {
             Err(_) => self.bar.inc(u64::MAX),
         };
 
-        self.file.consume(amt);
+        self.read.consume(amt);
     }
 }

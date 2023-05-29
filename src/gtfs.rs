@@ -1,111 +1,37 @@
 /// Module for reading gtfs collection
 ///
-use std::{
-    collections::HashMap,
-    fs::{File, OpenOptions},
-    hash::Hash,
-    io::{BufRead, BufReader, Read, Seek},
-    path::Path,
-};
-
-use anyhow::{bail, Result};
-
-use indicatif::{ProgressBar, ProgressStyle};
-
-use crate::progress::ProgressReader;
+use std::{collections::HashMap, hash::Hash};
 
 use serde::{de::DeserializeOwned, Serialize};
-
-use zip::ZipArchive;
-
-use crate::csv::CsvTableReader;
 
 use join::JoinReader;
 
 mod join;
+pub use self::csv_models::{GtfsFile, GtfsFileType};
 pub use self::join::PartitionedTable;
 
-use self::csv_models::{GtfsFile, GtfsFileType, Route, StopTime, Trip};
+use self::csv_models::{Route, StopTime, Trip};
 
 mod csv_models;
 
 pub trait GtfsStore {
-    fn get_readable<'a>(&'a mut self, file_type: GtfsFileType) -> Option<Box<dyn BufRead + 'a>>;
+    // fn get_readable<'a>(&'a mut self, file_type: GtfsFileType) -> Option<Box<dyn BufRead + 'a>>;
 
-    fn get_table_reader<'a, D: DeserializeOwned + GtfsFile>(
+    fn scan<'a, D: DeserializeOwned + GtfsFile + 'a>(
         &'a mut self,
-    ) -> Result<CsvTableReader<Box<dyn BufRead + 'a>, D>> {
-        let file_type = D::get_file_type();
-        let read = self.get_readable(file_type);
-        let Some(read) = read else {
-                bail!("File {} not found", file_type.file_name())
-            };
-        let reader = CsvTableReader::<_, D>::new(read);
-        Ok(reader)
-    }
-}
+    ) -> Option<Box<dyn Iterator<Item = D> + 'a>>;
 
-pub struct GtfsZipStore {
-    archive: ZipArchive<File>,
-    file_name_mapping: HashMap<GtfsFileType, String>,
-}
-
-fn file_name_to_type(name: &str) -> Option<GtfsFileType> {
-    // Remove extension
-    let file_name: &str = &Path::new(name).file_stem().unwrap().to_string_lossy();
-    GtfsFileType::from_filename(file_name)
-}
-
-/// Retrieve file intexes for each of the gtfs file types
-fn get_file_names<'a, R: Read + Seek>(
-    zip: &'a mut ZipArchive<R>,
-) -> Result<HashMap<GtfsFileType, String>> {
-    let mut mapping: HashMap<GtfsFileType, String> = HashMap::new();
-
-    for file_idx in 0..zip.len() {
-        let zipped_file = zip.by_index(file_idx).unwrap();
-
-        let Some(file_type) = file_name_to_type(zipped_file.name()) else {
-            continue
-        };
-
-        if let Some(_value) = mapping.insert(file_type, zipped_file.name().to_string()) {
-            bail!("Duplicate file in zip: {}", zipped_file.name())
-        };
-    }
-
-    Ok(mapping)
-}
-
-impl GtfsZipStore {
-    pub fn from_file(path: &str) -> Self {
-        let file = OpenOptions::new().read(true).open(path).unwrap();
-
-        let mut archive = zip::ZipArchive::new(file).unwrap();
-
-        let file_name_mapping = get_file_names(&mut archive).unwrap();
-
-        GtfsZipStore {
-            archive,
-            file_name_mapping,
-        }
-    }
-}
-
-impl GtfsStore for GtfsZipStore {
-    fn get_readable<'a>(&'a mut self, file_type: GtfsFileType) -> Option<Box<dyn BufRead + 'a>> {
-        let Some(filename) = self.file_name_mapping.get(&file_type) else {
-            return None
-        };
-
-        let res = self.archive.by_name(filename).unwrap();
-
-        let total_size = res.size();
-
-        let progress_reader = Box::new(ProgressReader::new(BufReader::new(res), total_size));
-
-        Some(progress_reader)
-    }
+    // fn get_table_reader<'a, D: DeserializeOwned + GtfsFile>(
+    //     &'a mut self,
+    // ) -> Result<CsvTableReader<Box<dyn BufRead + 'a>, D>> {
+    //     let file_type = D::get_file_type();
+    //     let read = self.get_readable(file_type);
+    //     let Some(read) = read else {
+    //             bail!("File {} not found", file_type.file_name())
+    //         };
+    //     let reader = CsvTableReader::<_, D>::new(read);
+    //     Ok(reader)
+    // }
 }
 
 pub trait TablePartitioner {
@@ -155,33 +81,18 @@ impl GtfsPartitioned {
         let mut route_keys = KeyStore::default();
         let mut trip_id_x_route_id: HashMap<String, usize> = HashMap::new();
 
-        let _routes = P::partition(
-            store
-                .get_table_reader::<Route>()
-                .unwrap()
-                .map(|x| x.unwrap()),
-            num_partitions,
-            |route| route_keys.map_id(route.route_id.clone()),
-        );
+        let _routes = P::partition(store.scan::<Route>().unwrap(), num_partitions, |route| {
+            route_keys.map_id(route.route_id.clone())
+        });
 
-        let trips = P::partition(
-            store
-                .get_table_reader::<Trip>()
-                .unwrap()
-                .map(|x| x.unwrap()),
-            num_partitions,
-            |trip| {
-                let route_id = route_keys.map_id(trip.route_id.clone());
-                trip_id_x_route_id.insert(trip.trip_id.clone(), route_id);
-                route_id
-            },
-        );
+        let trips = P::partition(store.scan::<Trip>().unwrap(), num_partitions, |trip| {
+            let route_id = route_keys.map_id(trip.route_id.clone());
+            trip_id_x_route_id.insert(trip.trip_id.clone(), route_id);
+            route_id
+        });
 
         let stop_times = P::partition(
-            store
-                .get_table_reader::<StopTime>()
-                .unwrap()
-                .map(|x| x.unwrap()),
+            store.scan::<StopTime>().unwrap(),
             num_partitions,
             |stop_time| trip_id_x_route_id.get(&stop_time.trip_id).unwrap().clone(),
         );
