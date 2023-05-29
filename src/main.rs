@@ -41,7 +41,7 @@ impl TablePartitioner for BinaryPartitioner {
     ) -> Box<dyn gtfs::PartitionedTable<K, V>>
     where
         I: Iterator<Item = V>,
-        F: Fn(&V) -> K,
+        F: FnMut(&V) -> K,
         V: Serialize + DeserializeOwned + 'static,
         K: Serialize + DeserializeOwned + Hash + Eq + Clone + 'static,
     {
@@ -55,8 +55,8 @@ fn main() -> Result<()> {
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
 
-    // let filename = "/Users/artef/Downloads/ntra_import_latest_ntra-in.gtfs.txt.zip";
-    let filename = "/Users/artef/dev/dtfs/local/CATA.gtfs.txt.zip";
+    let filename = "/Users/artef/Downloads/ntra_import_latest_ntra-in.gtfs.txt.zip";
+    // let filename = "/Users/artef/dev/dtfs/local/CATA.gtfs.txt.zip";
 
     let mut gtfs_store = GtfsZipStore::from_file(filename);
 

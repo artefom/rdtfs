@@ -60,9 +60,9 @@ where
         })
     }
 
-    fn write<F>(&mut self, obj: &V, key: F) -> Result<()>
+    fn write<F>(&mut self, obj: &V, mut key: F) -> Result<()>
     where
-        F: Fn(&V) -> K,
+        F: FnMut(&V) -> K,
     {
         let key_obj = key(obj);
         let partition_id: usize = (calculate_hash(&key_obj) % (self.partitions.len() as u64))
@@ -141,7 +141,7 @@ where
 {
     fn disk_partition<K, F>(self, num_partitions: usize, key: F) -> Result<PartitionedReader<K, V>>
     where
-        F: Fn(&V) -> K,
+        F: FnMut(&V) -> K,
         K: Hash + Eq + Clone + DeserializeOwned + Serialize;
 }
 
@@ -150,15 +150,19 @@ where
     I: Iterator<Item = V>,
     V: Serialize + DeserializeOwned,
 {
-    fn disk_partition<K, F>(self, num_partitions: usize, key: F) -> Result<PartitionedReader<K, V>>
+    fn disk_partition<K, F>(
+        self,
+        num_partitions: usize,
+        mut key: F,
+    ) -> Result<PartitionedReader<K, V>>
     where
-        F: Fn(&V) -> K,
+        F: FnMut(&V) -> K,
         K: Hash + Eq + Clone + DeserializeOwned + Serialize,
     {
         let mut table = PartitionedWriter::new(num_partitions)?;
 
         for item in self {
-            table.write(&item, &key)?;
+            table.write(&item, &mut key)?;
         }
 
         table.into_reader()

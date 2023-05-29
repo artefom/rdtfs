@@ -82,7 +82,7 @@ impl<'de> Deserialize<'de> for Color {
     where
         D: serde::Deserializer<'de>,
     {
-        let value: &str = Deserialize::deserialize(deserializer)?;
+        let value: String = Deserialize::deserialize(deserializer)?;
         Ok(Color::Hex(value.to_string()))
     }
 }
@@ -792,27 +792,52 @@ pub trait TablePartitioner {
     ) -> Box<dyn join::PartitionedTable<K, V>>
     where
         I: Iterator<Item = V>,
-        F: Fn(&V) -> K,
+        F: FnMut(&V) -> K,
         K: Hash + Eq + Clone + Serialize + DeserializeOwned + 'static,
         V: Serialize + DeserializeOwned + 'static;
 }
 
 pub struct GtfsPartitioned {
-    stop_times: Box<dyn PartitionedTable<String, StopTime>>,
-    trips: Box<dyn PartitionedTable<String, Trip>>,
+    stop_times: Box<dyn PartitionedTable<usize, StopTime>>,
+    trips: Box<dyn PartitionedTable<usize, Trip>>,
+}
+
+/// Maps string keys to integer ids
+#[derive(Default)]
+struct KeyStore {
+    last_id: usize,
+    key_x_id: HashMap<String, usize>,
+}
+
+impl KeyStore {
+    fn map_id(&mut self, key: String) -> usize {
+        use std::collections::hash_map::Entry::*;
+
+        match self.key_x_id.entry(key) {
+            Occupied(entry) => *entry.get(),
+            Vacant(entry) => {
+                self.last_id += 1;
+                *entry.insert(self.last_id)
+            }
+        }
+    }
 }
 
 impl GtfsPartitioned {
     pub fn from_store<S: GtfsStore, P: TablePartitioner>(store: &mut S) -> Self {
         let num_partitions: usize = 10;
 
-        let stop_times = P::partition(
+        // Storage of all rotue keys
+        let mut route_keys = KeyStore::default();
+        let mut trip_id_x_route_id: HashMap<String, usize> = HashMap::new();
+
+        let routes = P::partition(
             store
-                .get_table_reader::<StopTime>()
+                .get_table_reader::<Route>()
                 .unwrap()
                 .map(|x| x.unwrap()),
             num_partitions,
-            |stop_time| stop_time.trip_id.clone(),
+            |route| route_keys.map_id(route.route_id.clone()),
         );
 
         let trips = P::partition(
@@ -821,7 +846,20 @@ impl GtfsPartitioned {
                 .unwrap()
                 .map(|x| x.unwrap()),
             num_partitions,
-            |trip| trip.trip_id.clone(),
+            |trip| {
+                let route_id = route_keys.map_id(trip.route_id.clone());
+                trip_id_x_route_id.insert(trip.trip_id.clone(), route_id);
+                route_id
+            },
+        );
+
+        let stop_times = P::partition(
+            store
+                .get_table_reader::<StopTime>()
+                .unwrap()
+                .map(|x| x.unwrap()),
+            num_partitions,
+            |stop_time| trip_id_x_route_id.get(&stop_time.trip_id).unwrap().clone(),
         );
 
         GtfsPartitioned { stop_times, trips }
@@ -835,7 +873,7 @@ impl GtfsPartitioned {
 }
 
 pub struct GtfsIterator<'r> {
-    join: JoinReader<'r, String, Trip, StopTime>,
+    join: JoinReader<'r, usize, Trip, StopTime>,
 }
 
 pub struct FullRoute {
