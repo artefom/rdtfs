@@ -4,7 +4,7 @@ use std::{collections::HashMap, hash::Hash};
 
 use serde::{de::DeserializeOwned, Serialize};
 
-use join::JoinReader;
+use join::Join2;
 
 mod join;
 pub use self::csv_models::{GtfsFile, GtfsFileType};
@@ -87,14 +87,14 @@ impl GtfsPartitioned {
     }
 
     pub fn iter<'a>(&'a self) -> GtfsIterator<'a> {
-        let join = join::join(&self.trips, &self.stop_times).unwrap();
+        let join = join::join2(&self.trips, &self.stop_times).unwrap();
 
         GtfsIterator { join }
     }
 }
 
 pub struct GtfsIterator<'r> {
-    join: JoinReader<'r, usize, Trip, StopTime>,
+    join: Join2<'r, usize, Trip, StopTime>,
 }
 
 pub struct FullRoute {

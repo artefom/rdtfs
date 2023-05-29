@@ -6,7 +6,11 @@ use std::{
 use anyhow::Result;
 use serde::{de::DeserializeOwned, Serialize};
 
-pub fn hashmap_join<K, V1, V2, I1, I2>(iter1: I1, iter2: I2) -> HashMap<K, (Vec<V1>, Vec<V2>)>
+pub trait PartitionedTable<K, V> {
+    fn get_partition(&self, index: usize) -> Option<Box<dyn Iterator<Item = (K, V)>>>;
+}
+
+pub fn hmjoin2<K, V1, V2, I1, I2>(iter1: I1, iter2: I2) -> HashMap<K, (Vec<V1>, Vec<V2>)>
 where
     I1: Iterator<Item = (K, V1)>,
     I2: Iterator<Item = (K, V2)>,
@@ -36,11 +40,7 @@ where
     result
 }
 
-pub trait PartitionedTable<K, V> {
-    fn get_partition(&self, index: usize) -> Option<Box<dyn Iterator<Item = (K, V)>>>;
-}
-
-pub struct JoinReader<'r, K, V1, V2>
+pub struct Join2<'r, K, V1, V2>
 where
     K: Hash + DeserializeOwned,
     V1: DeserializeOwned,
@@ -54,10 +54,10 @@ where
 
 /// Join two tables by given key out-of-memory
 /// Can be used for extremely large tales
-pub fn join<'r, K, V1, V2>(
+pub fn join2<'r, K, V1, V2>(
     reader1: &'r Box<dyn PartitionedTable<K, V1>>,
     reader2: &'r Box<dyn PartitionedTable<K, V2>>,
-) -> Result<JoinReader<'r, K, V1, V2>>
+) -> Result<Join2<'r, K, V1, V2>>
 where
     V1: Serialize + DeserializeOwned,
     V2: Serialize + DeserializeOwned,
@@ -69,9 +69,9 @@ where
     let partition2 = reader2.get_partition(0).unwrap();
 
     println!("Getting joined");
-    let joined = hashmap_join(partition1, partition2).into_iter();
+    let joined = hmjoin2(partition1, partition2).into_iter();
 
-    Ok(JoinReader {
+    Ok(Join2 {
         reader1,
         reader2,
         current_data: joined,
@@ -79,7 +79,7 @@ where
     })
 }
 
-impl<'r, K, V1, V2> Iterator for JoinReader<'r, K, V1, V2>
+impl<'r, K, V1, V2> Iterator for Join2<'r, K, V1, V2>
 where
     V1: Serialize + DeserializeOwned,
     V2: Serialize + DeserializeOwned,
@@ -109,7 +109,7 @@ where
                     return None
                 };
 
-            let mut joined = hashmap_join(partition1, partition2).into_iter();
+            let mut joined = hmjoin2(partition1, partition2).into_iter();
 
             let Some(next_value) = joined.next() else {
                 continue;
