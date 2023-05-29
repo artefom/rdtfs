@@ -4,10 +4,9 @@ use std::{collections::HashMap, hash::Hash};
 
 use serde::{de::DeserializeOwned, Serialize};
 
-use join::Join2;
-
 mod join;
 pub use self::csv_models::{GtfsFile, GtfsFileType};
+use self::join::Join3;
 pub use self::join::PartitionedTable;
 
 use self::csv_models::{Route, StopTime, Trip};
@@ -34,6 +33,7 @@ pub trait TablePartitioner {
 }
 
 pub struct GtfsPartitioned {
+    routes: Box<dyn PartitionedTable<usize, Route>>,
     stop_times: Box<dyn PartitionedTable<usize, StopTime>>,
     trips: Box<dyn PartitionedTable<usize, Trip>>,
 }
@@ -67,7 +67,7 @@ impl GtfsPartitioned {
         let mut route_keys = KeyStore::default();
         let mut trip_id_x_route_id: HashMap<String, usize> = HashMap::new();
 
-        let _routes = P::partition(store.scan::<Route>().unwrap(), num_partitions, |route| {
+        let routes = P::partition(store.scan::<Route>().unwrap(), num_partitions, |route| {
             route_keys.map_id(route.route_id.clone())
         });
 
@@ -83,21 +83,26 @@ impl GtfsPartitioned {
             |stop_time| trip_id_x_route_id.get(&stop_time.trip_id).unwrap().clone(),
         );
 
-        GtfsPartitioned { stop_times, trips }
+        GtfsPartitioned {
+            routes,
+            stop_times,
+            trips,
+        }
     }
 
     pub fn iter<'a>(&'a self) -> GtfsIterator<'a> {
-        let join = join::join2(&self.trips, &self.stop_times).unwrap();
+        let join = join::join3(&self.routes, &self.trips, &self.stop_times).unwrap();
 
         GtfsIterator { join }
     }
 }
 
 pub struct GtfsIterator<'r> {
-    join: Join2<'r, usize, Trip, StopTime>,
+    join: Join3<'r, usize, Route, Trip, StopTime>,
 }
 
 pub struct FullRoute {
+    pub routes: Vec<Route>,
     pub trips: Vec<Trip>,
     pub stop_times: Vec<StopTime>,
 }
@@ -106,10 +111,14 @@ impl<'r> Iterator for GtfsIterator<'r> {
     type Item = FullRoute;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let Some((_key, (trips, stop_times))) = self.join.next() else {
+        let Some((_key, (routes, trips, stop_times))) = self.join.next() else {
             return None
         };
 
-        Some(FullRoute { trips, stop_times })
+        Some(FullRoute {
+            routes,
+            trips,
+            stop_times,
+        })
     }
 }

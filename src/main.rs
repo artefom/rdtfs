@@ -97,6 +97,9 @@ fn main() -> Result<()> {
 
     for route in gtfs_partitioned.iter() {
         if route.stop_times.len() > 10 {
+            for route in route.routes {
+                println!("{:?}", route);
+            }
             for trip in route.trips {
                 println!("{:?}", trip);
             }
