@@ -12,9 +12,10 @@ use anyhow::{bail, Result};
 
 use indicatif::{ProgressBar, ProgressStyle};
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use crate::progress::ProgressReader;
 
-use serde_repr::{Deserialize_repr, Serialize_repr};
+use serde::{de::DeserializeOwned, Serialize};
+
 use zip::ZipArchive;
 
 use crate::csv::CsvTableReader;
@@ -22,9 +23,9 @@ use crate::csv::CsvTableReader;
 use join::JoinReader;
 
 mod join;
-pub use join::PartitionedTable;
+pub use self::join::PartitionedTable;
 
-use self::csv_models::{GtfsFileType, GtfsFile, StopTime, Trip, Route};
+use self::csv_models::{GtfsFile, GtfsFileType, Route, StopTime, Trip};
 
 mod csv_models;
 
@@ -74,52 +75,6 @@ fn get_file_names<'a, R: Read + Seek>(
     }
 
     Ok(mapping)
-}
-
-/// Reads data and reports progress
-struct ProgressReader<F> {
-    file: F,
-    bar: ProgressBar,
-}
-
-impl<F> ProgressReader<F> {
-    fn new(file: F, total_size: u64) -> Self {
-        let progress = ProgressBar::new(total_size);
-
-        progress.set_style(
-            ProgressStyle::with_template(
-                "{bar:40.cyan/blue} {bytes:>7}/{total_bytes:7} {binary_bytes_per_sec} [ETA: {eta}] {msg}",
-            )
-            .unwrap()
-            .progress_chars("##-"),
-        );
-
-        ProgressReader {
-            file,
-            bar: progress,
-        }
-    }
-}
-
-impl<F: Read> Read for ProgressReader<F> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.file.read(buf)
-    }
-}
-
-impl<F: BufRead> BufRead for ProgressReader<F> {
-    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
-        self.file.fill_buf()
-    }
-
-    fn consume(&mut self, amt: usize) {
-        match TryInto::<u64>::try_into(amt) {
-            Ok(value) => self.bar.inc(value),
-            Err(_) => self.bar.inc(u64::MAX),
-        };
-
-        self.file.consume(amt);
-    }
 }
 
 impl GtfsZipStore {
@@ -200,7 +155,7 @@ impl GtfsPartitioned {
         let mut route_keys = KeyStore::default();
         let mut trip_id_x_route_id: HashMap<String, usize> = HashMap::new();
 
-        let routes = P::partition(
+        let _routes = P::partition(
             store
                 .get_table_reader::<Route>()
                 .unwrap()

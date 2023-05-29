@@ -1,19 +1,15 @@
 use std::{
-    collections::HashMap,
-    fs::{File, OpenOptions},
     hash::Hash,
-    io::{BufRead, BufReader, Read, Seek},
-    path::Path,
 };
 
-use anyhow::{bail, Result};
+use anyhow::{Result};
 
-use indicatif::{ProgressBar, ProgressStyle};
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
+use serde::{Deserialize, Serialize};
 
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use zip::ZipArchive;
+
 
 pub trait GtfsFile {
     fn get_file_type() -> GtfsFileType;

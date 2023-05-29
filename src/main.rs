@@ -17,6 +17,8 @@ mod csv;
 
 mod binarystore;
 
+mod progress;
+
 impl<K, V> gtfs::PartitionedTable<K, V> for binarystore::PartitionedReader<K, V>
 where
     K: DeserializeOwned + 'static,
