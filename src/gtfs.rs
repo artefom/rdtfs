@@ -15,8 +15,6 @@ use self::csv_models::{Route, StopTime, Trip};
 mod csv_models;
 
 pub trait GtfsStore {
-    // fn get_readable<'a>(&'a mut self, file_type: GtfsFileType) -> Option<Box<dyn BufRead + 'a>>;
-
     fn scan<'a, D: DeserializeOwned + GtfsFile + 'a>(
         &'a mut self,
     ) -> Option<Box<dyn Iterator<Item = D> + 'a>>;
