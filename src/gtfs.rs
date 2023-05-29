@@ -20,18 +20,6 @@ pub trait GtfsStore {
     fn scan<'a, D: DeserializeOwned + GtfsFile + 'a>(
         &'a mut self,
     ) -> Option<Box<dyn Iterator<Item = D> + 'a>>;
-
-    // fn get_table_reader<'a, D: DeserializeOwned + GtfsFile>(
-    //     &'a mut self,
-    // ) -> Result<CsvTableReader<Box<dyn BufRead + 'a>, D>> {
-    //     let file_type = D::get_file_type();
-    //     let read = self.get_readable(file_type);
-    //     let Some(read) = read else {
-    //             bail!("File {} not found", file_type.file_name())
-    //         };
-    //     let reader = CsvTableReader::<_, D>::new(read);
-    //     Ok(reader)
-    // }
 }
 
 pub trait TablePartitioner {
