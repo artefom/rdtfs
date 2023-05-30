@@ -78,6 +78,21 @@ impl TablePartitioner for BinaryPartitioner {
         let partitioned = iter.disk_partition(num_partitions, key).unwrap();
         Box::new(partitioned)
     }
+
+    fn multipartition<I, F, K, V>(
+        iter: I,
+        num_partitions: usize,
+        key: F,
+    ) -> Box<dyn gtfs::PartitionedTable<K, V>>
+    where
+        I: Iterator<Item = V>,
+        F: FnMut(&V) -> Vec<K>,
+        K: Hash + Eq + Clone + Serialize + DeserializeOwned + 'static,
+        V: Serialize + DeserializeOwned + 'static,
+    {
+        let partitioned = iter.disk_multipartition(num_partitions, key).unwrap();
+        Box::new(partitioned)
+    }
 }
 
 fn main() -> Result<()> {
@@ -86,7 +101,8 @@ fn main() -> Result<()> {
     );
 
     // let path = "/Users/artef/Downloads/ntra_import_latest_ntra-in.gtfs.txt.zip";
-    let path = "/Users/artef/dev/dtfs/local/CATA.gtfs.txt.zip";
+    // let path = "/Users/artef/dev/dtfs/local/CATA.gtfs.txt.zip";
+    let path = "/Users/artef/Downloads/AMAU.zip";
 
     let file = OpenOptions::new().read(true).open(path).unwrap();
     let mut archive = zip::ZipArchive::new(file).unwrap();
@@ -96,7 +112,7 @@ fn main() -> Result<()> {
     println!("Iterating");
 
     for route in gtfs_partitioned.iter() {
-        if route.stop_times.len() > 10 {
+        if route.stop_times.len() > 3 {
             for route in route.routes {
                 println!("{:?}", route);
             }
@@ -105,6 +121,9 @@ fn main() -> Result<()> {
             }
             for stop_time in route.stop_times {
                 println!("{:?}", stop_time);
+            }
+            for shape in route.shapes {
+                println!("{:?}", shape);
             }
             break;
         }

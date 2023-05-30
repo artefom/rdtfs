@@ -60,11 +60,7 @@ where
         })
     }
 
-    fn write<F>(&mut self, obj: &V, mut key: F) -> Result<()>
-    where
-        F: FnMut(&V) -> K,
-    {
-        let key_obj = key(obj);
+    fn write(&mut self, obj: &V, key_obj: K) -> Result<()> {
         let partition_id: usize = (calculate_hash(&key_obj) % (self.partitions.len() as u64))
             .try_into()
             .unwrap();
@@ -143,6 +139,15 @@ where
     where
         F: FnMut(&V) -> K,
         K: Hash + Eq + Clone + DeserializeOwned + Serialize;
+
+    fn disk_multipartition<K, F>(
+        self,
+        num_partitions: usize,
+        key: F,
+    ) -> Result<PartitionedReader<K, V>>
+    where
+        F: FnMut(&V) -> Vec<K>,
+        K: Hash + Eq + Clone + DeserializeOwned + Serialize;
 }
 
 impl<I, V> Partitionable<V> for I
@@ -162,9 +167,29 @@ where
         let mut table = PartitionedWriter::new(num_partitions)?;
 
         for item in self {
-            table.write(&item, &mut key)?;
+            let key_obj = key(&item);
+            table.write(&item, key_obj)?;
         }
 
+        table.into_reader()
+    }
+
+    fn disk_multipartition<K, F>(
+        self,
+        num_partitions: usize,
+        mut key: F,
+    ) -> Result<PartitionedReader<K, V>>
+    where
+        F: FnMut(&V) -> Vec<K>,
+        K: Hash + Eq + Clone + DeserializeOwned + Serialize,
+    {
+        let mut table = PartitionedWriter::new(num_partitions)?;
+        for item in self {
+            let keys = key(&item);
+            for key in keys {
+                table.write(&item, key)?;
+            }
+        }
         table.into_reader()
     }
 }

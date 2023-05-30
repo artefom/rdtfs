@@ -343,11 +343,11 @@ impl GtfsFile for FareRule {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Shape {
-    shape_id: String,
-    shape_pt_lat: f64,
-    shape_pt_lon: f64,
-    shape_pt_sequence: u64,
-    shape_dist_traveled: Option<f64>,
+    pub shape_id: String,
+    pub shape_pt_lat: f64,
+    pub shape_pt_lon: f64,
+    pub shape_pt_sequence: u64,
+    pub shape_dist_traveled: Option<f64>,
 }
 
 impl GtfsFile for Shape {
@@ -358,18 +358,18 @@ impl GtfsFile for Shape {
 
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
-enum ExactTimesType {
+pub enum ExactTimesType {
     FrequencyBased = 0,
     ExactSameHeadway = 1,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Frequency {
-    trip_id: String,
-    start_time: String,
-    end_time: String,
-    headway_secs: u64,
-    exact_times: Option<ExactTimesType>,
+    pub trip_id: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub headway_secs: u64,
+    pub exact_times: Option<ExactTimesType>,
 }
 
 impl GtfsFile for Frequency {
@@ -380,7 +380,7 @@ impl GtfsFile for Frequency {
 
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
-enum TransferType {
+pub enum TransferType {
     Recommended = 0,
     TimedTransfer = 1,
     WaitForTransfer = 2,
@@ -391,10 +391,10 @@ enum TransferType {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Transfer {
-    from_stop_id: String,
-    to_stop_id: String,
-    transfer_type: TransferType,
-    min_transfer_time: Option<u64>,
+    pub from_stop_id: String,
+    pub to_stop_id: String,
+    pub transfer_type: TransferType,
+    pub min_transfer_time: Option<u64>,
 }
 
 impl GtfsFile for Transfer {
@@ -405,7 +405,7 @@ impl GtfsFile for Transfer {
 
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
-enum PathwayMode {
+pub enum PathwayMode {
     Walkway = 1,
     Stairs = 2,
     Travelator = 3,
@@ -417,25 +417,25 @@ enum PathwayMode {
 
 #[derive(Debug, Deserialize_repr, Serialize_repr)]
 #[repr(u8)]
-enum BidirectionalType {
+pub enum BidirectionalType {
     Unidirectional = 0,
     Bidirectional = 1,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PathWay {
-    pathway_id: String,
-    from_stop_id: String,
-    to_stop_id: String,
-    pathway_mode: PathwayMode,
-    is_bidirectional: BidirectionalType,
-    length: Option<f64>,
-    traversal_time: Option<u64>,
-    stair_count: Option<u64>,
-    max_slope: Option<f64>,
-    min_width: Option<f64>,
-    signposted_as: Option<String>,
-    reversed_signposted_as: Option<String>,
+    pub pathway_id: String,
+    pub from_stop_id: String,
+    pub to_stop_id: String,
+    pub pathway_mode: PathwayMode,
+    pub is_bidirectional: BidirectionalType,
+    pub length: Option<f64>,
+    pub traversal_time: Option<u64>,
+    pub stair_count: Option<u64>,
+    pub max_slope: Option<f64>,
+    pub min_width: Option<f64>,
+    pub signposted_as: Option<String>,
+    pub reversed_signposted_as: Option<String>,
 }
 
 impl GtfsFile for PathWay {
