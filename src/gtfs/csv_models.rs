@@ -1,6 +1,6 @@
 /// Models for csv serialization/deserialization
 ///
-use std::hash::Hash;
+use std::{fmt::Display, hash::Hash};
 
 use anyhow::Result;
 
@@ -12,7 +12,7 @@ pub trait GtfsFile {
     fn get_file_type() -> GtfsFileType;
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum RouteType {
     Tram = 0,
@@ -27,7 +27,24 @@ pub enum RouteType {
     Monorail = 12,
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+impl Display for RouteType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RouteType::Tram => write!(f, "Tram"),
+            RouteType::Subway => write!(f, "Subway"),
+            RouteType::Rail => write!(f, "Rail"),
+            RouteType::Bus => write!(f, "Bus"),
+            RouteType::Ferry => write!(f, "Ferry"),
+            RouteType::CableTram => write!(f, "CableTram"),
+            RouteType::AerialLift => write!(f, "AerialLift"),
+            RouteType::Funicular => write!(f, "Funicular"),
+            RouteType::Trolleybus => write!(f, "Trolleybus"),
+            RouteType::Monorail => write!(f, "Monorail"),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum ContinuousPickupType {
     ContinuousStoppingPickup = 0,
@@ -36,7 +53,7 @@ pub enum ContinuousPickupType {
     AskDriver = 3,
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum ContinuousDropOffType {
     ContinuousStoppingDropOff = 0,
@@ -45,7 +62,7 @@ pub enum ContinuousDropOffType {
     AskDriver = 3,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Color {
     Hex(String),
 }
@@ -71,7 +88,7 @@ impl<'de> Deserialize<'de> for Color {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Route {
     pub route_id: String,
     pub agency_id: String,
@@ -88,13 +105,27 @@ pub struct Route {
     pub ticketing_deep_link_id: Option<String>,
 }
 
+impl Display for Route {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Route<{}> {}", self.route_id, self.route_type)?;
+        if let Some(long_name) = &self.route_long_name {
+            write!(f, " {}", long_name)?;
+        }
+
+        if let Some(short_name) = &self.route_short_name {
+            write!(f, " ({})", short_name)?;
+        }
+        Ok(())
+    }
+}
+
 impl GtfsFile for Route {
     fn get_file_type() -> GtfsFileType {
         GtfsFileType::Routes
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Agency {
     pub agency_id: String,
     pub agency_name: String,
@@ -105,6 +136,16 @@ pub struct Agency {
     pub agency_fare_url: Option<String>,
     pub agency_email: Option<String>,
     pub ticketing_deep_link_id: Option<String>,
+}
+
+impl Display for Agency {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Agency<{}> {} {}",
+            self.agency_id, self.agency_name, self.agency_timezone
+        )
+    }
 }
 
 impl GtfsFile for Agency {
@@ -123,7 +164,7 @@ pub enum StopLocationType {
     BoardingArea = 5,
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone)]
 #[repr(u8)]
 pub enum WheelChairBoardingType {
     NoInformation = 0,
@@ -155,21 +196,21 @@ impl GtfsFile for Stop {
     }
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone)]
 #[repr(u8)]
 pub enum TicketingType {
     Available = 0,
     Unavailable = 1,
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone)]
 #[repr(u8)]
 pub enum TripDirection {
     Outbound = 0,
     Inbound = 1,
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone)]
 #[repr(u8)]
 pub enum BikesAllowedType {
     NoInformation = 0,
@@ -177,7 +218,7 @@ pub enum BikesAllowedType {
     NoBikesAllowed = 2,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Trip {
     pub route_id: String,
     pub service_id: String,
@@ -191,6 +232,31 @@ pub struct Trip {
     pub bikes_allowed: Option<BikesAllowedType>,
     pub trip_ticketing_id: Option<String>,
     pub ticketing_type: Option<TicketingType>,
+}
+
+impl Display for Trip {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Trip<{}>", self.trip_id)?;
+        if let Some(headsign) = &self.trip_headsign {
+            write!(f, " to {}", headsign)?;
+        }
+
+        if let Some(short_name) = &self.trip_short_name {
+            write!(f, " ({})", short_name)?;
+        }
+        if let Some(direction) = &self.direction_id {
+            match direction {
+                TripDirection::Outbound => write!(f, " outbound"),
+                TripDirection::Inbound => write!(f, " inbound"),
+            }?;
+        }
+
+        if let Some(shape_id) = &self.shape_id {
+            write!(f, ", with shape {}", shape_id)?;
+        };
+
+        Ok(())
+    }
 }
 
 impl GtfsFile for Trip {
@@ -241,6 +307,25 @@ pub struct StopTime {
     pub ticketing_type: Option<TicketingType>,
 }
 
+impl Display for StopTime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.stop_sequence, self.stop_id)?;
+        if let Some(arrival_time) = &self.arrival_time {
+            write!(f, " {}", arrival_time)?;
+        }
+
+        if let Some(departure_time) = &self.departure_time {
+            write!(f, "-{}", departure_time)?;
+        }
+
+        if let Some(headsign) = &self.stop_headsign {
+            write!(f, " to {}", headsign)?;
+        }
+
+        Ok(())
+    }
+}
+
 impl GtfsFile for StopTime {
     fn get_file_type() -> GtfsFileType {
         GtfsFileType::StopTimes
@@ -256,16 +341,16 @@ pub enum ServiceAvailability {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Calendar {
-    service_id: String,
-    start_date: String,
-    end_date: String,
-    monday: ServiceAvailability,
-    tuesday: ServiceAvailability,
-    wednesday: ServiceAvailability,
-    thursday: ServiceAvailability,
-    friday: ServiceAvailability,
-    saturday: ServiceAvailability,
-    sunday: ServiceAvailability,
+    pub service_id: String,
+    pub start_date: String,
+    pub end_date: String,
+    pub monday: ServiceAvailability,
+    pub tuesday: ServiceAvailability,
+    pub wednesday: ServiceAvailability,
+    pub thursday: ServiceAvailability,
+    pub friday: ServiceAvailability,
+    pub saturday: ServiceAvailability,
+    pub sunday: ServiceAvailability,
 }
 
 impl GtfsFile for Calendar {
@@ -283,9 +368,9 @@ pub enum SerivceExceptionType {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CalendarDate {
-    service_id: String,
-    date: String,
-    exception_type: SerivceExceptionType,
+    pub service_id: String,
+    pub date: String,
+    pub exception_type: SerivceExceptionType,
 }
 
 impl GtfsFile for CalendarDate {
@@ -311,13 +396,13 @@ pub enum TransfersIncluded {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FareAttribute {
-    fare_id: String,
-    price: f64,
-    currency_type: String,
-    payment_method: PaymentMethod,
-    transfers: Option<TransfersIncluded>,
-    agency_id: Option<String>,
-    transfer_duration: Option<u64>,
+    pub fare_id: String,
+    pub price: f64,
+    pub currency_type: String,
+    pub payment_method: PaymentMethod,
+    pub transfers: Option<TransfersIncluded>,
+    pub agency_id: Option<String>,
+    pub transfer_duration: Option<u64>,
 }
 
 impl GtfsFile for FareAttribute {
@@ -328,11 +413,11 @@ impl GtfsFile for FareAttribute {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FareRule {
-    fare_id: String,
-    route_id: Option<String>,
-    origin_id: Option<String>,
-    destination_id: Option<String>,
-    contains_id: Option<String>,
+    pub fare_id: String,
+    pub route_id: Option<String>,
+    pub origin_id: Option<String>,
+    pub destination_id: Option<String>,
+    pub contains_id: Option<String>,
 }
 
 impl GtfsFile for FareRule {
@@ -459,15 +544,15 @@ impl GtfsFile for Level {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FeedInfo {
-    feed_publisher_name: String,
-    feed_publisher_url: String,
-    feed_lang: String,
-    default_lang: Option<String>,
-    feed_start_date: Option<String>,
-    feed_end_date: Option<String>,
-    feed_version: Option<String>,
-    feed_contact_email: Option<String>,
-    feed_contact_url: Option<String>,
+    pub feed_publisher_name: String,
+    pub feed_publisher_url: String,
+    pub feed_lang: String,
+    pub default_lang: Option<String>,
+    pub feed_start_date: Option<String>,
+    pub feed_end_date: Option<String>,
+    pub feed_version: Option<String>,
+    pub feed_contact_email: Option<String>,
+    pub feed_contact_url: Option<String>,
 }
 
 impl GtfsFile for FeedInfo {
@@ -518,17 +603,17 @@ impl GtfsFile for Translation {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Attribution {
-    attribution_id: Option<String>,
-    agency_id: Option<String>,
-    route_id: Option<String>,
-    trip_id: Option<String>,
-    organization_name: String,
-    is_producer: u8,
-    is_operator: u8,
-    is_authority: u8,
-    attribution_url: Option<String>,
-    attribution_email: Option<String>,
-    attribution_phone: Option<String>,
+    pub attribution_id: Option<String>,
+    pub agency_id: Option<String>,
+    pub route_id: Option<String>,
+    pub trip_id: Option<String>,
+    pub organization_name: String,
+    pub is_producer: u8,
+    pub is_operator: u8,
+    pub is_authority: u8,
+    pub attribution_url: Option<String>,
+    pub attribution_email: Option<String>,
+    pub attribution_phone: Option<String>,
 }
 
 impl GtfsFile for Attribution {
@@ -552,10 +637,10 @@ impl GtfsFile for TicketingIdentifier {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TicketingDeepLink {
-    ticketing_deep_link_id: String,
-    web_url: Option<String>,
-    android_intent_uri: Option<String>,
-    ios_universal_link_url: Option<String>,
+    pub ticketing_deep_link_id: String,
+    pub web_url: Option<String>,
+    pub android_intent_uri: Option<String>,
+    pub ios_universal_link_url: Option<String>,
 }
 
 impl GtfsFile for TicketingDeepLink {

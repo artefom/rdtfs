@@ -109,24 +109,57 @@ fn main() -> Result<()> {
 
     let gtfs_partitioned = GtfsPartitioned::from_store::<_, BinaryPartitioner>(&mut archive);
 
-    println!("Iterating");
-
     for route in gtfs_partitioned.iter() {
-        if route.stop_times.len() > 3 {
-            for route in route.routes {
-                println!("{:?}", route);
+        let mut enough_stop_times: bool = false;
+        if route.trips.len() <= 1 {
+            continue;
+        };
+        for trip in &route.trips {
+            if trip.stop_times.len() > 3 {
+                enough_stop_times = true;
+                break;
             }
-            for trip in route.trips {
-                println!("{:?}", trip);
-            }
-            for stop_time in route.stop_times {
-                println!("{:?}", stop_time);
-            }
-            for shape in route.shapes {
-                println!("{:?}", shape);
-            }
-            break;
         }
+
+        if !enough_stop_times {
+            continue;
+        }
+
+        println!("{}", route.agency);
+        println!("{}", route.route);
+        println!();
+
+        for trip in route.trips {
+            println!("{}", trip.trip);
+            for stop in trip.stop_times {
+                println!(" {}", stop);
+            }
+            println!();
+        }
+
+        break;
+
+        // if route.stop_times.len() > 3 {
+        //     println!("{:?}", route.agency);
+        //     println!("{:?}", route.route);
+
+        //     for trip in route.trips {
+        //         println!("{:?}", trip);
+        //     }
+        //     for stop_time in route.stop_times {
+        //         println!("{:?}", stop_time);
+        //     }
+        //     for stop_time in route.fare_rules {
+        //         println!("{:?}", stop_time);
+        //     }
+        //     for stop_time in route.fare_attributes {
+        //         println!("{:?}", stop_time);
+        //     }
+        //     // for shape in route.shapes {
+        //     //     println!("{:?}", shape);
+        //     // }
+        //     break;
+        // }
     }
 
     // For CATA
