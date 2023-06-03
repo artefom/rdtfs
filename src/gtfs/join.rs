@@ -398,9 +398,7 @@ where
     let partition4 = reader4.get_partition(0).unwrap();
     let partition5 = reader5.get_partition(0).unwrap();
     let partition6 = reader6.get_partition(0).unwrap();
-
     let partition7 = reader7.get_partition(0).unwrap();
-
     let partition8 = reader8.get_partition(0).unwrap();
 
     let joined = hmjoin8(
