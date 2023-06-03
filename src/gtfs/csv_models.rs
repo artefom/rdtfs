@@ -154,7 +154,7 @@ impl GtfsFile for Agency {
     }
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum StopLocationType {
     StopOrPlatform = 0,
@@ -164,7 +164,7 @@ pub enum StopLocationType {
     BoardingArea = 5,
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr, Clone)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum WheelChairBoardingType {
     NoInformation = 0,
@@ -172,7 +172,7 @@ pub enum WheelChairBoardingType {
     NoWheelchairSupport = 2,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Stop {
     pub stop_id: String,
     pub stop_code: Option<String>,
@@ -196,21 +196,21 @@ impl GtfsFile for Stop {
     }
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr, Clone)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum TicketingType {
     Available = 0,
     Unavailable = 1,
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr, Clone)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum TripDirection {
     Outbound = 0,
     Inbound = 1,
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr, Clone)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum BikesAllowedType {
     NoInformation = 0,
@@ -265,7 +265,7 @@ impl GtfsFile for Trip {
     }
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum StopPickupType {
     RegularPickup = 0,
@@ -274,7 +274,7 @@ pub enum StopPickupType {
     AskDriver = 3,
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum StopDropOffType {
     RegularDropOff = 0,
@@ -283,14 +283,14 @@ pub enum StopDropOffType {
     AskDriver = 3,
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum TimePointType {
     Aproximate = 0,
     Exact = 1,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct StopTime {
     pub trip_id: String,
     pub arrival_time: Option<String>,
@@ -332,14 +332,14 @@ impl GtfsFile for StopTime {
     }
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ServiceAvailability {
     SeriviceAvailable = 1,
     SeriviceNotAvailable = 0,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Calendar {
     pub service_id: String,
     pub start_date: String,
@@ -353,24 +353,68 @@ pub struct Calendar {
     pub sunday: ServiceAvailability,
 }
 
+impl Display for Calendar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} - {}", self.start_date, self.end_date)?;
+        if self.monday == ServiceAvailability::SeriviceAvailable {
+            write!(f, " monday")?;
+        };
+
+        if self.tuesday == ServiceAvailability::SeriviceAvailable {
+            write!(f, " tuesday")?;
+        };
+
+        if self.wednesday == ServiceAvailability::SeriviceAvailable {
+            write!(f, " wednesday")?;
+        };
+
+        if self.thursday == ServiceAvailability::SeriviceAvailable {
+            write!(f, " thursday")?;
+        };
+
+        if self.friday == ServiceAvailability::SeriviceAvailable {
+            write!(f, " friday")?;
+        };
+
+        if self.saturday == ServiceAvailability::SeriviceAvailable {
+            write!(f, " saturday")?;
+        };
+
+        if self.sunday == ServiceAvailability::SeriviceAvailable {
+            write!(f, " sunday")?;
+        };
+
+        Ok(())
+    }
+}
+
 impl GtfsFile for Calendar {
     fn get_file_type() -> GtfsFileType {
         GtfsFileType::Calendars
     }
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum SerivceExceptionType {
     Added = 1,
     Removed = 2,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CalendarDate {
     pub service_id: String,
     pub date: String,
     pub exception_type: SerivceExceptionType,
+}
+
+impl Display for CalendarDate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.exception_type {
+            SerivceExceptionType::Added => write!(f, "+{}", self.date),
+            SerivceExceptionType::Removed => write!(f, "-{}", self.date),
+        }
+    }
 }
 
 impl GtfsFile for CalendarDate {
@@ -379,14 +423,14 @@ impl GtfsFile for CalendarDate {
     }
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum PaymentMethod {
     PaidOnBoard = 0,
     PaidBeforeBoard = 1,
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum TransfersIncluded {
     NoTransfersPermitted = 0,
@@ -441,7 +485,7 @@ impl GtfsFile for Shape {
     }
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum ExactTimesType {
     FrequencyBased = 0,
@@ -463,7 +507,7 @@ impl GtfsFile for Frequency {
     }
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum TransferType {
     Recommended = 0,
@@ -488,7 +532,7 @@ impl GtfsFile for Transfer {
     }
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum PathwayMode {
     Walkway = 1,
@@ -500,7 +544,7 @@ pub enum PathwayMode {
     ExitGate = 7,
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 pub enum BidirectionalType {
     Unidirectional = 0,
@@ -561,7 +605,7 @@ impl GtfsFile for FeedInfo {
     }
 }
 
-#[derive(Debug, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Deserialize_repr, Serialize_repr, Clone, Copy)]
 #[repr(u8)]
 enum TableName {
     #[serde(rename = "agency")]

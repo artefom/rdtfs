@@ -31,7 +31,7 @@ where
 {
     fn scan<'a, D: DeserializeOwned + gtfs::GtfsFile + 'a>(
         &'a mut self,
-    ) -> Option<Box<dyn Iterator<Item = D> + 'a>> {
+    ) -> Box<dyn Iterator<Item = D> + 'a> {
         let file_type = D::get_file_type();
 
         let Some((reader, total_size)) = self
@@ -39,11 +39,12 @@ where
                 let file_stem = &Path::new(&filename).file_stem().unwrap().to_string_lossy();
                 gtfs::GtfsFileType::from_filename(&file_stem) == Some(file_type)
             }) else {
-                return None
+                // When file not found, return empty iterator
+                return Box::new(Vec::new().into_iter())
             };
         let reader = ProgressReader::new(BufReader::new(reader), total_size);
         let reader = CsvTableReader::<_, D>::new(reader).map(|x| x.unwrap());
-        Some(Box::new(reader))
+        Box::new(reader)
     }
 }
 
@@ -71,7 +72,7 @@ impl TablePartitioner for BinaryPartitioner {
     ) -> Box<dyn gtfs::PartitionedTable<K, V>>
     where
         I: Iterator<Item = V>,
-        F: FnMut(&V) -> K,
+        F: FnMut(&V) -> Option<K>,
         V: Serialize + DeserializeOwned + 'static,
         K: Serialize + DeserializeOwned + Hash + Eq + Clone + 'static,
     {
@@ -79,14 +80,15 @@ impl TablePartitioner for BinaryPartitioner {
         Box::new(partitioned)
     }
 
-    fn multipartition<I, F, K, V>(
+    fn multipartition<I, F, K, V, KI>(
         iter: I,
         num_partitions: usize,
         key: F,
     ) -> Box<dyn gtfs::PartitionedTable<K, V>>
     where
         I: Iterator<Item = V>,
-        F: FnMut(&V) -> Vec<K>,
+        F: FnMut(&V) -> KI,
+        KI: IntoIterator<Item = K>,
         K: Hash + Eq + Clone + Serialize + DeserializeOwned + 'static,
         V: Serialize + DeserializeOwned + 'static,
     {
@@ -100,18 +102,21 @@ fn main() -> Result<()> {
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
 
-    // let path = "/Users/artef/Downloads/ntra_import_latest_ntra-in.gtfs.txt.zip";
+    let path = "/Users/artef/Downloads/ntra_import_latest_ntra-in.gtfs.txt.zip";
     // let path = "/Users/artef/dev/dtfs/local/CATA.gtfs.txt.zip";
-    let path = "/Users/artef/Downloads/AMAU.zip";
+    // let path = "/Users/artef/Downloads/AMAU.zip";
 
     let file = OpenOptions::new().read(true).open(path).unwrap();
     let mut archive = zip::ZipArchive::new(file).unwrap();
 
-    let gtfs_partitioned = GtfsPartitioned::from_store::<_, BinaryPartitioner>(&mut archive);
+    let (gtfs_partitioned, read_errors) =
+        GtfsPartitioned::from_store::<_, BinaryPartitioner>(&mut archive);
+
+    println!("Errors while reading gtfs: {read_errors:?}");
 
     for route in gtfs_partitioned.iter() {
         let mut enough_stop_times: bool = false;
-        if route.trips.len() <= 1 {
+        if route.trips.len() <= 1 || route.trips.len() > 3 {
             continue;
         };
         for trip in &route.trips {
@@ -127,10 +132,15 @@ fn main() -> Result<()> {
 
         println!("{}", route.agency);
         println!("{}", route.route);
-        println!();
 
         for trip in route.trips {
             println!("{}", trip.trip);
+            for calendar in trip.calendar {
+                println!(" {}", calendar)
+            }
+            for calendar_date in trip.calendar_dates {
+                println!(" {}", calendar_date)
+            }
             for stop in trip.stop_times {
                 println!(" {}", stop);
             }
