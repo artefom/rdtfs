@@ -11,8 +11,8 @@ pub use self::join::PartitionedTable;
 use self::{csv_models::Shape, join::Join8};
 
 pub use self::csv_models::{
-    Agency, Calendar, CalendarDate, FareAttribute, FareRule, Route, SerivceExceptionType,
-    ServiceAvailability, Stop, StopTime, Trip,
+    to_midnights, to_stop_time, Agency, Calendar, CalendarDate, FareAttribute, FareRule, Route,
+    SerivceExceptionType, ServiceAvailability, Stop, StopTime, Trip,
 };
 
 mod csv_models;

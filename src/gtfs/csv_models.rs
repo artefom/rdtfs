@@ -1,9 +1,10 @@
 /// Models for csv serialization/deserialization
 ///
-use std::{fmt::Display, hash::Hash};
+use std::{collections::HashSet, fmt::Display, hash::Hash};
 
 use anyhow::Result;
 
+use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -307,6 +308,60 @@ pub struct StopTime {
     pub ticketing_type: Option<TicketingType>,
 }
 
+/// Convert time string to number of dats and naive time
+fn to_naive_time(s: &str) -> (chrono::Duration, chrono::NaiveTime) {
+    let mut parts = s.split(":");
+
+    let mut hours = match parts.next() {
+        Some(value) => value.parse().unwrap(),
+        None => 00,
+    };
+
+    let minutes: u32 = match parts.next() {
+        Some(value) => value.parse().unwrap(),
+        None => 00,
+    };
+
+    let seconds: u32 = match parts.next() {
+        Some(value) => value.parse().unwrap(),
+        None => 00,
+    };
+
+    let mut days_delta: i64 = 0;
+
+    while hours >= 24 {
+        hours -= 24;
+        days_delta += 1;
+    }
+
+    let days = chrono::Duration::days(days_delta);
+    let time = chrono::NaiveTime::from_hms_opt(hours, minutes, seconds).unwrap();
+    (days, time)
+}
+
+/// Convert stop time to specific departure and arrival
+/// using the timezone and start date of the trip
+pub fn to_stop_time(
+    timezone: chrono_tz::Tz,
+    start: NaiveDate,
+    stop_time: &StopTime,
+) -> (DateTime<Utc>, DateTime<Utc>) {
+    let (arrival_offset, arrival_time) = to_naive_time(stop_time.arrival_time.as_ref().unwrap());
+    let (departure_offset, departure_time) =
+        to_naive_time(stop_time.departure_time.as_ref().unwrap());
+
+    let arrival_datetime = chrono::NaiveDateTime::new(start + arrival_offset, arrival_time);
+    let departure_datetime = chrono::NaiveDateTime::new(start + departure_offset, departure_time);
+
+    let arrival_datetime = timezone.from_local_datetime(&arrival_datetime).unwrap();
+    let departure_datetime = timezone.from_local_datetime(&departure_datetime).unwrap();
+
+    let arrival_datetime: DateTime<Utc> = arrival_datetime.with_timezone(&Utc);
+    let departure_datetime: DateTime<Utc> = departure_datetime.with_timezone(&Utc);
+
+    (arrival_datetime, departure_datetime)
+}
+
 impl Display for StopTime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}", self.stop_sequence, self.stop_id)?;
@@ -451,6 +506,47 @@ pub struct CalendarDate {
     pub service_id: String,
     pub date: String,
     pub exception_type: SerivceExceptionType,
+}
+
+fn to_date_range(start: NaiveDate, end: NaiveDate) -> Vec<NaiveDate> {
+    let mut days = Vec::new();
+    let mut current_day = start;
+    while current_day <= end {
+        days.push(current_day);
+        current_day += chrono::Duration::days(1);
+    }
+    days
+}
+
+/// Converts calendar and calendar dates to collection of instants
+/// at a midnight of the timezone of the agency
+pub fn to_midnights(
+    calendar: Option<Calendar>,
+    calendar_dates: Vec<CalendarDate>,
+) -> Vec<NaiveDate> {
+    let mut dates: HashSet<NaiveDate> = HashSet::new();
+
+    if let Some(calendar) = calendar {
+        let start_date = NaiveDate::parse_from_str(&calendar.start_date, "%Y%m%d").unwrap();
+        let end_date = NaiveDate::parse_from_str(&calendar.end_date, "%Y%m%d").unwrap();
+
+        for date in to_date_range(start_date, end_date) {
+            if calendar.is_operating_on(date.weekday()) {
+                dates.insert(date);
+            }
+        }
+    };
+
+    for calendar_date in calendar_dates {
+        let date = NaiveDate::parse_from_str(&calendar_date.date, "%Y%m%d").unwrap();
+        use SerivceExceptionType::*;
+        match calendar_date.exception_type {
+            Added => dates.insert(date),
+            Removed => dates.remove(&date),
+        };
+    }
+
+    dates.into_iter().collect()
 }
 
 impl Display for CalendarDate {
