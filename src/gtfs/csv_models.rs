@@ -353,6 +353,51 @@ pub struct Calendar {
     pub sunday: ServiceAvailability,
 }
 
+impl Calendar {
+    pub fn is_operating_on(&self, weekday: chrono::Weekday) -> bool {
+        use chrono::Weekday::*;
+        use ServiceAvailability::*;
+        match weekday {
+            Mon => {
+                if self.monday == SeriviceAvailable {
+                    return true;
+                }
+            }
+            Tue => {
+                if self.tuesday == SeriviceAvailable {
+                    return true;
+                }
+            }
+            Wed => {
+                if self.wednesday == SeriviceAvailable {
+                    return true;
+                }
+            }
+            Thu => {
+                if self.thursday == SeriviceAvailable {
+                    return true;
+                }
+            }
+            Fri => {
+                if self.friday == SeriviceAvailable {
+                    return true;
+                }
+            }
+            Sat => {
+                if self.saturday == SeriviceAvailable {
+                    return true;
+                }
+            }
+            Sun => {
+                if self.sunday == SeriviceAvailable {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+}
+
 impl Display for Calendar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} - {}", self.start_date, self.end_date)?;

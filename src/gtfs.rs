@@ -10,8 +10,9 @@ pub use self::csv_models::{GtfsFile, GtfsFileType};
 pub use self::join::PartitionedTable;
 use self::{csv_models::Shape, join::Join8};
 
-use self::csv_models::{
-    Agency, Calendar, CalendarDate, FareAttribute, FareRule, Route, Stop, StopTime, Trip,
+pub use self::csv_models::{
+    Agency, Calendar, CalendarDate, FareAttribute, FareRule, Route, SerivceExceptionType,
+    ServiceAvailability, Stop, StopTime, Trip,
 };
 
 mod csv_models;
@@ -62,13 +63,13 @@ pub struct GtfsPartitioned {
 
 /// Maps string keys to integer ids
 #[derive(Default)]
-struct KeyStore {
+pub struct KeyStore {
     last_id: usize,
     key_x_id: HashMap<String, usize>,
 }
 
 impl KeyStore {
-    fn map_id(&mut self, key: String) -> usize {
+    pub fn map_id(&mut self, key: String) -> usize {
         use std::collections::hash_map::Entry::*;
 
         match self.key_x_id.entry(key) {
@@ -80,7 +81,7 @@ impl KeyStore {
         }
     }
 
-    fn get_id(&self, key: &str) -> Option<&usize> {
+    pub fn get_id(&self, key: &str) -> Option<&usize> {
         self.key_x_id.get(key)
     }
 }
@@ -347,7 +348,7 @@ pub struct GtfsIterator<'r> {
 pub struct FullTrip {
     pub trip: Trip,
     pub stop_times: Vec<StopTime>,
-    pub calendar: Vec<Calendar>,
+    pub calendar: Option<Calendar>,
     pub calendar_dates: Vec<CalendarDate>,
 }
 
@@ -386,7 +387,7 @@ impl<'r> Iterator for GtfsIterator<'r> {
 
         let mut full_trips = Vec::new();
         let mut stop_times_idx: HashMap<String, Vec<StopTime>> = HashMap::new();
-        let mut calendar_idx: HashMap<String, Vec<Calendar>> = HashMap::new();
+        let mut calendar_idx: HashMap<String, Calendar> = HashMap::new();
         let mut calendar_dates_idx: HashMap<String, Vec<CalendarDate>> = HashMap::new();
 
         use std::collections::hash_map::Entry::*;
@@ -405,13 +406,11 @@ impl<'r> Iterator for GtfsIterator<'r> {
 
         // Index calendar
         for calendar in calendar.into_iter() {
-            match calendar_idx.entry(calendar.service_id.clone()) {
-                Occupied(mut entry) => {
-                    entry.get_mut().push(calendar);
-                }
-                Vacant(entry) => {
-                    entry.insert(vec![calendar]);
-                }
+            if calendar_idx
+                .insert(calendar.service_id.clone(), calendar)
+                .is_some()
+            {
+                todo!()
             }
         }
 
@@ -430,10 +429,7 @@ impl<'r> Iterator for GtfsIterator<'r> {
         // Create trips
         for trip in trips.into_iter() {
             let trip_stop_times = stop_times_idx.remove(&trip.trip_id).unwrap();
-            let calendar = calendar_idx
-                .get(&trip.service_id)
-                .map(|x| x.clone())
-                .unwrap_or_else(|| Vec::new());
+            let calendar = calendar_idx.get(&trip.service_id).map(|x| x.clone());
             let calendar_dates = calendar_dates_idx
                 .get(&trip.service_id)
                 .map(|x| x.clone())
