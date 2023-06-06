@@ -2,7 +2,7 @@
 ///
 use std::{collections::HashSet, fmt::Display, hash::Hash};
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 
 use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
@@ -308,6 +308,58 @@ pub struct StopTime {
     pub ticketing_type: Option<TicketingType>,
 }
 
+fn to_date_offset_and_naive_time(
+    data: &str,
+    start: NaiveDate,
+    timezone: chrono_tz::Tz,
+) -> Result<DateTime<Utc>> {
+    let (offset, time) = to_naive_time(data);
+
+    let datetime = chrono::NaiveDateTime::new(start + offset, time);
+
+    let datetime = match timezone.from_local_datetime(&datetime) {
+        chrono::LocalResult::None => {
+            bail!("Could not parse datetime {datetime} as timezone {timezone}")
+        }
+        chrono::LocalResult::Single(single) => single,
+        chrono::LocalResult::Ambiguous(min, max) => {
+            bail!("Could not parse datetime {datetime} as timezone {timezone}. Ambiguous time ranging from {min} to {max}")
+        }
+    };
+
+    Ok(datetime.with_timezone(&Utc))
+}
+
+impl StopTime {
+    pub fn departure_datetime(
+        &self,
+        start: NaiveDate,
+        timezone: chrono_tz::Tz,
+    ) -> Result<DateTime<Utc>> {
+        to_date_offset_and_naive_time(
+            self.departure_time
+                .as_ref()
+                .context("Stop time departure time is missing")?,
+            start,
+            timezone,
+        )
+    }
+
+    pub fn arrival_datetime(
+        &self,
+        start: NaiveDate,
+        timezone: chrono_tz::Tz,
+    ) -> Result<DateTime<Utc>> {
+        to_date_offset_and_naive_time(
+            self.arrival_time
+                .as_ref()
+                .context("Stop time arrival time is missing")?,
+            start,
+            timezone,
+        )
+    }
+}
+
 /// Convert time string to number of dats and naive time
 fn to_naive_time(s: &str) -> (chrono::Duration, chrono::NaiveTime) {
     let mut parts = s.split(":");
@@ -337,29 +389,6 @@ fn to_naive_time(s: &str) -> (chrono::Duration, chrono::NaiveTime) {
     let days = chrono::Duration::days(days_delta);
     let time = chrono::NaiveTime::from_hms_opt(hours, minutes, seconds).unwrap();
     (days, time)
-}
-
-/// Convert stop time to specific departure and arrival
-/// using the timezone and start date of the trip
-pub fn to_stop_time(
-    timezone: chrono_tz::Tz,
-    start: NaiveDate,
-    stop_time: &StopTime,
-) -> (DateTime<Utc>, DateTime<Utc>) {
-    let (arrival_offset, arrival_time) = to_naive_time(stop_time.arrival_time.as_ref().unwrap());
-    let (departure_offset, departure_time) =
-        to_naive_time(stop_time.departure_time.as_ref().unwrap());
-
-    let arrival_datetime = chrono::NaiveDateTime::new(start + arrival_offset, arrival_time);
-    let departure_datetime = chrono::NaiveDateTime::new(start + departure_offset, departure_time);
-
-    let arrival_datetime = timezone.from_local_datetime(&arrival_datetime).unwrap();
-    let departure_datetime = timezone.from_local_datetime(&departure_datetime).unwrap();
-
-    let arrival_datetime: DateTime<Utc> = arrival_datetime.with_timezone(&Utc);
-    let departure_datetime: DateTime<Utc> = departure_datetime.with_timezone(&Utc);
-
-    (arrival_datetime, departure_datetime)
 }
 
 impl Display for StopTime {

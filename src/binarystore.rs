@@ -95,6 +95,7 @@ where
 
         Ok(PartitionedReader {
             partitions,
+            size: self.num_written,
             _dir: self.dir,
             _phantom: PhantomData,
             _phantom_key: PhantomData,
@@ -108,6 +109,7 @@ where
     V: DeserializeOwned,
 {
     partitions: Vec<PathBuf>,
+    size: usize,
     _dir: TempDir,
     _phantom: PhantomData<V>,
     _phantom_key: PhantomData<K>,
@@ -118,6 +120,10 @@ where
     K: DeserializeOwned,
     V: DeserializeOwned,
 {
+    pub fn len(&self) -> usize {
+        self.size
+    }
+
     pub fn get_partition(&self, index: usize) -> Option<BinaryReader<BufReader<File>, (K, V)>> {
         let Some(partition_file) =self.partitions.get(index) else {
             return None

@@ -2,6 +2,24 @@ use std::io::{BufRead, Read};
 
 use indicatif::{ProgressBar, ProgressStyle};
 
+pub fn progress_style_bytes() -> ProgressStyle {
+    ProgressStyle::with_template(
+        "{bar:40.cyan/blue} {bytes:>7}/{total_bytes:7} {binary_bytes_per_sec} [ETA: {eta}] {msg}",
+    )
+    .unwrap()
+    .progress_chars("##-")
+}
+
+pub fn progress_style_count() -> ProgressStyle {
+    ProgressStyle::with_template("{bar:40.cyan/blue} {pos:>7}/{len:7} {per_sec} [ETA: {eta}] {msg}")
+        .unwrap()
+        .progress_chars("##-")
+}
+
+pub fn get_progress_bar(total_size: u64) -> ProgressBar {
+    ProgressBar::new(total_size).with_style(progress_style_bytes())
+}
+
 /// Reads data and reports progress
 pub struct ProgressReader<R> {
     read: R,
@@ -10,16 +28,7 @@ pub struct ProgressReader<R> {
 
 impl<R> ProgressReader<R> {
     pub fn new(file: R, total_size: u64) -> Self {
-        let progress = ProgressBar::new(total_size);
-
-        progress.set_style(
-            ProgressStyle::with_template(
-                "{bar:40.cyan/blue} {bytes:>7}/{total_bytes:7} {binary_bytes_per_sec} [ETA: {eta}] {msg}",
-            )
-            .unwrap()
-            .progress_chars("##-"),
-        );
-
+        let progress = get_progress_bar(total_size);
         ProgressReader {
             read: file,
             bar: progress,

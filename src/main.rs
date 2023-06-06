@@ -6,15 +6,18 @@ use std::{fs::OpenOptions, hash::Hash, io::BufReader, path::Path};
 
 use binarystore::Partitionable;
 
-use gtfs::{to_midnights, to_stop_time, GtfsPartitioned, KeyStore, StopTime, TablePartitioner};
+use gtfs::{to_midnights, FullRoute, GtfsPartitioned, KeyStore, StopTime, TablePartitioner};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use indicatif::ProgressIterator;
 use rides::Ride;
 use serde::{de::DeserializeOwned, Serialize};
 
 use progress::ProgressReader;
 
 use csv::CsvTableReader;
+
+use crate::{progress::progress_style_count, rides::TimetableGrouper};
 
 mod gtfs;
 
@@ -63,6 +66,10 @@ where
 
         Some(Box::new(value.map(|x| x.unwrap())))
     }
+
+    fn len(&self) -> usize {
+        binarystore::PartitionedReader::len(&self)
+    }
 }
 
 struct BinaryPartitioner;
@@ -107,16 +114,39 @@ fn to_rides(
     stop_times: Vec<StopTime>,
     calendar: Option<gtfs::Calendar>,
     calendar_dates: Vec<gtfs::CalendarDate>,
-) -> Vec<Ride> {
-    let mut rides = Vec::new();
+) -> Vec<Result<Ride>> {
+    let mut rides: Vec<Result<Ride>> = Vec::new();
     let timezone: chrono_tz::Tz = agency.agency_timezone.parse().unwrap();
 
     for date in to_midnights(calendar, calendar_dates) {
         let mut stops = Vec::new();
-
         for stop_time in &stop_times {
             let station = station_ids.map_id(stop_time.stop_id.clone());
-            let (arrival, departure) = to_stop_time(timezone, date, stop_time);
+
+            // Parse arrival time
+            let arrival = match stop_time
+                .arrival_datetime(date, timezone)
+                .context("Could not parse arrival datetime")
+            {
+                Ok(value) => value,
+                Err(err) => {
+                    rides.push(Err(err));
+                    continue;
+                }
+            };
+
+            // Parse departure time
+            let departure = match stop_time
+                .departure_datetime(date, timezone)
+                .context("Could not parse departure datetime")
+            {
+                Ok(value) => value,
+                Err(err) => {
+                    rides.push(Err(err));
+                    continue;
+                }
+            };
+
             stops.push(rides::Stop {
                 station,
                 arrival,
@@ -124,10 +154,100 @@ fn to_rides(
             });
         }
 
-        rides.push(rides::Ride { stops })
+        rides.push(Ok(rides::Ride { stops }))
     }
-
     rides
+}
+
+struct RidesIterator<'k, 'r, I>
+where
+    I: Iterator<Item = FullRoute> + 'r,
+{
+    station_ids: &'k mut KeyStore,
+    routes_iter: &'r mut I,
+    ride_batch: Vec<Result<Ride>>,
+}
+
+impl<'k, 'r, I> RidesIterator<'k, 'r, I>
+where
+    I: Iterator<Item = FullRoute> + 'r,
+{
+    fn next_route(&mut self) -> bool {
+        let route = self.routes_iter.next();
+        let Some(route) = route else {
+            return false;
+        };
+        for trip in route.trips {
+            let mut rides = to_rides(
+                self.station_ids,
+                &route.agency,
+                trip.stop_times,
+                trip.calendar,
+                trip.calendar_dates,
+            );
+            self.ride_batch.append(&mut rides);
+        }
+        return true;
+    }
+}
+
+impl<'k, 'r, I> Iterator for RidesIterator<'k, 'r, I>
+where
+    I: Iterator<Item = FullRoute> + 'r,
+{
+    type Item = Result<Ride>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            // Pop next ride batch
+            match self.ride_batch.pop() {
+                Some(value) => return Some(value),
+                None => (),
+            };
+
+            // Id next route does not exist, return
+            if !self.next_route() {
+                return None;
+            }
+        }
+    }
+}
+
+trait RidesIiter<I>
+where
+    I: Iterator<Item = FullRoute>,
+{
+    fn rides<'k, 'r>(&'r mut self, station_ids: &'k mut KeyStore) -> RidesIterator<'k, 'r, I>;
+}
+
+impl<I> RidesIiter<I> for I
+where
+    I: Iterator<Item = FullRoute>,
+{
+    fn rides<'k, 'r>(&'r mut self, station_ids: &'k mut KeyStore) -> RidesIterator<'k, 'r, I> {
+        let route = self.next();
+
+        let mut ride_batch = Vec::new();
+
+        if let Some(route) = route {
+            for trip in route.trips {
+                let mut rides = to_rides(
+                    station_ids,
+                    &route.agency,
+                    trip.stop_times,
+                    trip.calendar,
+                    trip.calendar_dates,
+                );
+                ride_batch.append(&mut rides);
+            }
+        };
+
+        RidesIterator {
+            station_ids,
+            routes_iter: self,
+            ride_batch,
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -149,88 +269,50 @@ fn main() -> Result<()> {
 
     let mut station_ids = KeyStore::default();
 
-    for route in gtfs_partitioned.iter() {
-        let mut enough_stop_times: bool = false;
-        if route.trips.len() <= 1 || route.trips.len() > 3 {
-            continue;
-        };
-        for trip in &route.trips {
-            if trip.stop_times.len() > 3 {
-                enough_stop_times = true;
-                break;
+    let grouper = TimetableGrouper {};
+
+    let iter = gtfs_partitioned.iter();
+    println!("Total number of routes: {}", iter.len());
+
+    let mut total_number_rides: usize = 0;
+    let mut error_rides: usize = 0;
+
+    // Group rides
+    for ride in gtfs_partitioned
+        .iter()
+        .progress_with_style(progress_style_count())
+        .rides(&mut station_ids)
+    {
+        total_number_rides += 1;
+        match ride {
+            Ok(value) => (),
+            Err(err) => {
+                println!("{:?}", err);
+                error_rides += 1;
             }
         }
-
-        if !enough_stop_times {
-            continue;
-        }
-
-        println!("{}", route.agency);
-        println!("{}", route.route);
-
-        for trip in route.trips {
-            let rides = to_rides(
-                &mut station_ids,
-                &route.agency,
-                trip.stop_times,
-                trip.calendar,
-                trip.calendar_dates,
-            );
-
-            for ride in rides {
-                println!("{:?}", ride);
-            }
-        }
-
-        break;
-
-        // if route.stop_times.len() > 3 {
-        //     println!("{:?}", route.agency);
-        //     println!("{:?}", route.route);
-
-        //     for trip in route.trips {
-        //         println!("{:?}", trip);
-        //     }
-        //     for stop_time in route.stop_times {
-        //         println!("{:?}", stop_time);
-        //     }
-        //     for stop_time in route.fare_rules {
-        //         println!("{:?}", stop_time);
-        //     }
-        //     for stop_time in route.fare_attributes {
-        //         println!("{:?}", stop_time);
-        //     }
-        //     // for shape in route.shapes {
-        //     //     println!("{:?}", shape);
-        //     // }
-        //     break;
-        // }
     }
 
-    // For CATA
-    // Number of trips: 4177
-    // Iterating trips
-    // Number of trips: 4177
-    // Partitioning stop times
-    // Number of stop times: 19419
-    // Total joined: 2047
-    // Partition trips took 12.234875ms
-    // Trips indexing took 2.882292ms
-    // Stop times partitioning took 40.768125ms
-    // Join took 10.867459ms
-    // Total time: 66.766709ms
+    println!("Total number of rides: {total_number_rides}, {error_rides} errors");
 
-    // Number of trips: 800752
-    // Iterating trips
-    // Number of trips: 800752
-    // Partitioning stop times
-    // Number of stop times: 15377055
-    // Total joined: 2558
-    // Partition trips took 1.218865333s
-    // Trips indexing took 351.40575ms
-    // Stop times partitioning took 19.062396834s
-    // Join took 7.349318416s
-    // Total time: 27.982005208s
+    // Partition rides
+
+    // // Group rides
+    // for route in gtfs_partitioned.iter() {
+    //     for trip in route.trips {
+    //         let rides = to_rides(
+    //             &mut station_ids,
+    //             &route.agency,
+    //             trip.stop_times,
+    //             trip.calendar,
+    //             trip.calendar_dates,
+    //         );
+    //         for ride in rides {
+    //             grouper.add_ride(ride)
+    //         }
+    //     }
+    //     break;
+    // }
 
     Ok(())
 }

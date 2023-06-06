@@ -9,6 +9,7 @@ use serde::{de::DeserializeOwned, Serialize};
 
 pub trait PartitionedTable<K, V> {
     fn get_partition(&self, index: usize) -> Option<Box<dyn Iterator<Item = (K, V)>>>;
+    fn len(&self) -> usize;
 }
 
 pub struct EmptyPartitionedTable<K, V> {
@@ -34,6 +35,10 @@ impl<K, V> Default for EmptyPartitionedTable<K, V> {
 impl<K: 'static, V: 'static> PartitionedTable<K, V> for EmptyPartitionedTable<K, V> {
     fn get_partition(&self, _index: usize) -> Option<Box<dyn Iterator<Item = (K, V)>>> {
         Some(Box::new(iter::empty()))
+    }
+
+    fn len(&self) -> usize {
+        0
     }
 }
 

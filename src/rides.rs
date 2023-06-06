@@ -9,3 +9,17 @@ pub struct Stop {
 pub struct Ride {
     pub stops: Vec<Stop>, // Ride is defined by a sequence of stops
 }
+
+pub struct TimetableGrouper;
+
+pub struct TimetableGrouped;
+
+impl TimetableGrouper {
+    pub fn add_ride(&self, ride: Ride) {}
+
+    pub fn finalize(self) -> TimetableGrouped {
+        TimetableGrouped {}
+    }
+}
+
+impl TimetableGrouped {}

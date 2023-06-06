@@ -11,7 +11,7 @@ pub use self::join::PartitionedTable;
 use self::{csv_models::Shape, join::Join8};
 
 pub use self::csv_models::{
-    to_midnights, to_stop_time, Agency, Calendar, CalendarDate, FareAttribute, FareRule, Route,
+    to_midnights, Agency, Calendar, CalendarDate, FareAttribute, FareRule, Route,
     SerivceExceptionType, ServiceAvailability, Stop, StopTime, Trip,
 };
 
@@ -321,6 +321,7 @@ impl GtfsPartitioned {
         );
 
         GtfsIterator {
+            size: self.routes.len(),
             join,
             _stops: &self.stops,
             agencies: &self.agencies,
@@ -329,6 +330,7 @@ impl GtfsPartitioned {
 }
 
 pub struct GtfsIterator<'r> {
+    size: usize,
     join: Join8<
         'r,
         usize,
@@ -360,6 +362,12 @@ pub struct FullRoute {
                               // pub shapes: Vec<Shape>,
                               // pub fare_rules: Vec<FareRule>,
                               // pub fare_attributes: Vec<FareAttribute>,
+}
+
+impl<'r> ExactSizeIterator for GtfsIterator<'r> {
+    fn len(&self) -> usize {
+        self.size
+    }
 }
 
 impl<'r> Iterator for GtfsIterator<'r> {
