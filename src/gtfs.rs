@@ -322,7 +322,7 @@ impl GtfsPartitioned {
 
         GtfsIterator {
             join,
-            stops: &self.stops,
+            _stops: &self.stops,
             agencies: &self.agencies,
         }
     }
@@ -341,7 +341,7 @@ pub struct GtfsIterator<'r> {
         Calendar,
         CalendarDate,
     >,
-    stops: &'r HashMap<String, Stop>,
+    _stops: &'r HashMap<String, Stop>,
     agencies: &'r HashMap<String, Agency>,
 }
 
@@ -375,9 +375,9 @@ impl<'r> Iterator for GtfsIterator<'r> {
             routes,
             trips,
             stop_times,
-            shapes,
-            fare_rules,
-            fare_attributes,
+            _shapes,
+            _fare_rules,
+            _fare_attributes,
             calendar,
             calendar_dates,
         ) = data;

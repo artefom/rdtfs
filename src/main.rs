@@ -2,13 +2,7 @@
 // #![allow(dead_code)]
 // #![allow(unused_variables)]
 
-use std::{
-    collections::{HashMap, HashSet},
-    fs::OpenOptions,
-    hash::Hash,
-    io::BufReader,
-    path::Path,
-};
+use std::{collections::HashSet, fs::OpenOptions, hash::Hash, io::BufReader, path::Path};
 
 use binarystore::Partitionable;
 
@@ -20,6 +14,7 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use progress::ProgressReader;
 
+use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
 use csv::CsvTableReader;
 
 mod gtfs;
@@ -105,8 +100,6 @@ impl TablePartitioner for BinaryPartitioner {
         Box::new(partitioned)
     }
 }
-
-use chrono::{DateTime, Datelike, NaiveDate, NaiveTime, TimeZone, Utc};
 
 fn to_date_range(start: NaiveDate, end: NaiveDate) -> Vec<NaiveDate> {
     let mut days = Vec::new();

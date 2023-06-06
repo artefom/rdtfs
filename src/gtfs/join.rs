@@ -5,7 +5,6 @@ use std::{
     marker::PhantomData,
 };
 
-use anyhow::Result;
 use serde::{de::DeserializeOwned, Serialize};
 
 pub trait PartitionedTable<K, V> {
