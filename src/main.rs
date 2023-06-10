@@ -153,7 +153,7 @@ fn to_rides(
                 departure,
             });
         }
-
+        stops.sort_by_key(|x| x.departure);
         rides.push(Ok(rides::Ride { stops }))
     }
     rides
@@ -256,6 +256,7 @@ fn main() -> Result<()> {
     );
 
     // let path = "/Users/artef/Downloads/ntra_import_latest_ntra-in.gtfs.txt.zip";
+    // let path = "/Users/artef/dev/dtfs/local/MEGB.zip";
     let path = "/Users/artef/dev/dtfs/local/CATA.gtfs.txt.zip";
     // let path = "/Users/artef/Downloads/AMAU.zip";
 
@@ -269,7 +270,7 @@ fn main() -> Result<()> {
 
     let mut station_ids = KeyStore::default();
 
-    let grouper = TimetableGrouper {};
+    let mut grouper = TimetableGrouper::new();
 
     let iter = gtfs_partitioned.iter();
     println!("Total number of routes: {}", iter.len());
@@ -284,35 +285,22 @@ fn main() -> Result<()> {
         .rides(&mut station_ids)
     {
         total_number_rides += 1;
-        match ride {
-            Ok(value) => (),
+        let ride = match ride {
+            Ok(value) => value,
             Err(err) => {
                 println!("{:?}", err);
                 error_rides += 1;
+                continue;
             }
-        }
+        };
+
+        // Add ride to grouper
+        grouper.add_ride(ride);
     }
 
     println!("Total number of rides: {total_number_rides}, {error_rides} errors");
 
-    // Partition rides
-
-    // // Group rides
-    // for route in gtfs_partitioned.iter() {
-    //     for trip in route.trips {
-    //         let rides = to_rides(
-    //             &mut station_ids,
-    //             &route.agency,
-    //             trip.stop_times,
-    //             trip.calendar,
-    //             trip.calendar_dates,
-    //         );
-    //         for ride in rides {
-    //             grouper.add_ride(ride)
-    //         }
-    //     }
-    //     break;
-    // }
+    grouper.finalize();
 
     Ok(())
 }
