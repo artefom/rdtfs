@@ -18,6 +18,7 @@ tempfile = "3.5.0"
 chrono = "0.4.26"
 chrono-tz = "0.8.2"
 stringmetrics = "2.2.2"
+itertools = "0.10.5"
 
 
 [profile.release]
