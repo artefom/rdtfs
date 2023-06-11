@@ -167,7 +167,7 @@ fn get_finished<'a, T>(
 ) -> &'a ProfileItem {
     // Find all finished profiles
     let mut result: Vec<&ProfileItem> = Vec::new();
-    for (item, path) in profiles.last().unwrap() {
+    for (item, _) in profiles.last().unwrap() {
         if item.is_finished(seqs) {
             result.push(item);
         }
