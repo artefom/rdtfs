@@ -10,6 +10,7 @@ use gtfs::{to_midnights, FullRoute, GtfsPartitioned, KeyStore, StopTime, TablePa
 
 use anyhow::{Context, Result};
 use indicatif::ProgressIterator;
+use itertools::Itertools;
 use rides::Ride;
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -17,7 +18,7 @@ use progress::ProgressReader;
 
 use csv::CsvTableReader;
 
-use crate::{progress::progress_style_count, rides::TimetableGrouper};
+use crate::{progress::progress_style_count, rides::TimetableGrouper, poa::align};
 
 mod gtfs;
 
@@ -30,6 +31,10 @@ mod progress;
 mod store;
 
 mod rides;
+
+mod sequence_alignment;
+
+mod poa;
 
 impl<T> gtfs::GtfsStore for T
 where
@@ -300,7 +305,18 @@ fn main() -> Result<()> {
 
     println!("Total number of rides: {total_number_rides}, {error_rides} errors");
 
-    grouper.finalize();
+    let grouped = grouper.finalize();
+
+    for stop_seqs in grouped.mapping {
+        if stop_seqs.len() > 10 {
+            println!("Cluster length is too big: {}", stop_seqs.len());
+            continue;
+        }
+        println!("Cluster {:?}", stop_seqs);
+        let seq_inner = stop_seqs.iter().map(|x| x.as_ref()).collect_vec();
+        let aligned = align(&seq_inner);
+        println!("Aligned: {:?}", aligned);
+    }
 
     Ok(())
 }
