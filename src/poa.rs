@@ -111,6 +111,14 @@ impl Edge {
     }
 }
 
+#[derive(Debug)]
+struct PseudoNode {
+    pnode_id: isize,
+    predecessors: Vec<isize>,
+    successors: Vec<isize>,
+    node_ids: Vec<isize>,
+}
+
 pub struct POAGraph {
     next_node_id: isize,
     nnodes: isize,
@@ -124,8 +132,8 @@ pub struct POAGraph {
 }
 
 impl POAGraph {
-    pub fn new(seq: Option<&str>, label: &str) -> Self {
-        let mut poa = POAGraph {
+    pub fn new() -> Self {
+        POAGraph {
             next_node_id: 0,
             nnodes: 0,
             nedges: 0,
@@ -135,13 +143,7 @@ impl POAGraph {
             labels: Vec::new(),
             seqs: Vec::new(),
             starts: Vec::new(),
-        };
-
-        if let Some(s) = seq {
-            poa.add_unmatched_seq(s, label, true);
         }
-
-        poa
     }
 
     pub fn add_unmatched_seq(&mut self, seq: &str, label: &str, update_sequences: bool) {
@@ -223,12 +225,129 @@ impl POAGraph {
         nid
     }
 
-    // The other functions would be implemented in a similar fashion
-    // ...
+    pub fn simplified_graph_rep(&self) -> Vec<PseudoNode> {
+        // TODO: The need for this suggests that the way the graph is currently represented
+        // isn't really right and needs some rethinking.
+
+        let mut node_to_pn = HashMap::new();
+        let mut pn_to_nodes = HashMap::new();
+
+        // Find the mappings from nodes to pseudonodes
+        let mut cur_pnid: isize = 0;
+        for (_, node) in &self.nodedict {
+            if !node_to_pn.contains_key(&node.id) {
+                let mut node_ids = Vec::new();
+                node_ids.push(node.id);
+                node_ids.extend_from_slice(&node.aligned_to);
+
+                pn_to_nodes.insert(cur_pnid, node_ids.clone());
+                for nid in node_ids {
+                    node_to_pn.insert(nid, cur_pnid);
+                }
+                cur_pnid += 1;
+            }
+        }
+
+        // Create the pseudonodes
+        let mut pseudonodes = Vec::new();
+        for pnid in 0..cur_pnid {
+            let nids = pn_to_nodes.get(&pnid).unwrap().clone();
+            let mut preds = Vec::new();
+            let mut succs = Vec::new();
+            for nid in &nids {
+                let node = self.nodedict.get(nid).unwrap();
+                for (_, in_edge) in &node.in_edges {
+                    preds.push(*node_to_pn.get(&in_edge.out_node_id).unwrap());
+                }
+                for (_, out_edge) in &node.out_edges {
+                    succs.push(*node_to_pn.get(&out_edge.in_node_id).unwrap());
+                }
+            }
+            let pn = PseudoNode {
+                pnode_id: pnid,
+                predecessors: preds,
+                successors: succs,
+                node_ids: nids,
+            };
+            pseudonodes.push(pn);
+        }
+        pseudonodes
+    }
+
+    pub fn toposort(&mut self) {
+        // Sorted node list so that all incoming edges come from nodes earlier in the list.
+        let mut sortedlist: Vec<isize> = Vec::new();
+        let mut completed: HashSet<isize> = HashSet::new();
+
+        let pseudonodes = self.simplified_graph_rep();
+
+        fn dfs(
+            start: isize,
+            complete: &mut HashSet<isize>,
+            sortedlist: &mut Vec<isize>,
+            pseudonodes: &[PseudoNode],
+        ) {
+            let mut stack: Vec<isize> = vec![start];
+            let mut started: HashSet<isize> = HashSet::new();
+            while !stack.is_empty() {
+                let pnode_id = stack.pop().unwrap();
+
+                if complete.contains(&pnode_id) {
+                    continue;
+                }
+
+                if started.contains(&pnode_id) {
+                    complete.insert(pnode_id);
+                    for &nid in &pseudonodes[pnode_id as usize].node_ids {
+                        sortedlist.insert(0, nid);
+                    }
+                    started.remove(&pnode_id);
+                    continue;
+                }
+
+                let successors = &pseudonodes[pnode_id as usize].successors;
+                started.insert(pnode_id);
+                stack.push(pnode_id);
+                for s in successors {
+                    stack.push(*s);
+                }
+            }
+        }
+
+        while sortedlist.len() < self.nnodes as usize {
+            let mut found: Option<isize> = None;
+            for pnid in 0..pseudonodes.len() {
+                if !completed.contains(&(pnid as isize))
+                    && pseudonodes[pnid].predecessors.len() == 0
+                {
+                    found = Some(pnid as isize);
+                    break;
+                }
+            }
+            assert!(found.is_some());
+            dfs(
+                found.unwrap(),
+                &mut completed,
+                &mut sortedlist,
+                &pseudonodes,
+            );
+        }
+
+        assert_eq!(sortedlist.len(), self.nnodes as usize);
+        self.nodeidlist = sortedlist;
+        self.needsort = false;
+    }
 }
 
 pub fn align<'a, T: Hash + Eq + Clone + Debug>(seqs: &[&'a [T]]) -> Vec<&'a T> {
-    todo!()
+    let mut graph = POAGraph::new();
+
+    graph.add_unmatched_seq("ABECD", "seq-1", true);
+    graph.add_unmatched_seq("ABCD", "seq-2", true);
+
+    // graph.toposort();
+
+    vec![]
 }
 
 #[cfg(test)]
