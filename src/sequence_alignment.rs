@@ -23,10 +23,20 @@ struct Offsets {
 
 impl PartialOrd for Offsets {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.next_positions
-            .iter()
-            .sum::<usize>()
-            .partial_cmp(&other.next_positions.iter().sum::<usize>())
+        use std::cmp::Ordering::*;
+        match self.next_positions.partial_cmp(&other.next_positions) {
+            Some(value) => Some(match value {
+                Less => Greater,
+                Equal => Equal,
+                Greater => Less,
+            }),
+            None => None,
+        }
+
+        // self.next_positions
+        //     .iter()
+        //     .sum::<usize>()
+        //     .partial_cmp(&other.next_positions.iter().sum::<usize>())
     }
 }
 
@@ -43,6 +53,17 @@ impl Offsets {
             next_positions.push(0);
         }
         Offsets { next_positions }
+    }
+
+    fn get_current<'a, T>(&self, seqs: &'a [&'a [T]]) -> Option<&'a T> {
+        for (seq_i, next_pos) in self.next_positions.iter().enumerate() {
+            if *next_pos == 0 {
+                continue;
+            }
+            let cur_pos = next_pos - 1;
+            return Some(&seqs[seq_i][cur_pos]);
+        }
+        return None;
     }
 
     // Get all possible next profiles from a sequence
@@ -68,10 +89,16 @@ impl Offsets {
     }
 
     // Genreate all possible next profiles from the current one
-    fn all_possible_next<T: Hash + Eq + Clone + Debug>(&self, seqs: &[&[T]]) -> Vec<Offsets> {
-        let mut next_items = Vec::new();
-        let mut next_possible_items: HashSet<&T> = HashSet::new();
-
+    fn all_possible_next<'a, 'b, T: Hash + Eq + Clone + Debug>(
+        &self,
+        seqs: &'b [&[T]],
+        next_items: &'a mut Vec<Offsets>,
+        next_possible_items: &'a mut HashSet<&'b T>,
+        next_ids: &'a mut Vec<usize>,
+    ) {
+        next_items.clear();
+        next_ids.clear();
+        next_possible_items.clear();
         for item in self.iter_next(seqs) {
             let Some(item) = item else {
                 continue
@@ -79,44 +106,54 @@ impl Offsets {
             next_possible_items.insert(item);
         }
 
-        for next_item in &next_possible_items {
-            let next_ids = self
+        // Do not extend twice the same stop
+        if let Some(current) = self.get_current(seqs) {
+            next_possible_items.remove(current);
+        }
+
+        for next_item in next_possible_items.iter() {
+            // Get all possible ids that can be increased
+            let next_ids_iter = self
                 .iter_next(seqs)
                 .into_iter()
                 .enumerate()
                 .filter(|(_, elem)| *elem == Some(*next_item))
                 .map(|(pos, _)| pos);
 
-            for comb in next_ids.powerset() {
-                if comb.len() == 0 {
-                    continue;
-                }
+            next_ids.clear();
+            next_ids.extend(next_ids_iter);
 
+            // Push increment of all items
+            let mut next_item = Offsets {
+                next_positions: self.next_positions.clone(),
+            };
+            for inc_item in next_ids.iter() {
+                next_item.next_positions[*inc_item] += 1;
+            }
+            next_items.push(next_item);
+
+            if next_ids.len() == 1 {
+                continue;
+            }
+
+            for comb in next_ids.iter().combinations(next_ids.len() - 1) {
                 let mut next_item = Offsets {
                     next_positions: self.next_positions.clone(),
                 };
 
-                let mut comb_hs = HashSet::new();
-
-                for item in &comb {
-                    comb_hs.insert(item.clone());
-                }
-
                 for inc_item in &comb {
-                    next_item.next_positions[*inc_item] += 1;
+                    next_item.next_positions[**inc_item] += 1;
                 }
 
                 next_items.push(next_item);
             }
         }
-
-        next_items
     }
 }
 
 #[derive(Clone, Debug)]
 struct BacktrackInfo {
-    cnt: usize,
+    total_len: usize,
     source: Option<Offsets>,
 }
 
@@ -131,6 +168,8 @@ fn get_finished<'a, T>(
             result.push(item);
         }
     }
+
+    println!("Found {} solutions", result.len());
 
     // Take some element as a final result. We're guaranteed to have at least one
     // result ant this point
@@ -193,61 +232,89 @@ fn backtrack_letters<'a, T: Debug + Hash + Eq>(
     letters_result
 }
 
+fn total_len<'a>(mut offsets: &'a Offsets, profiles: &'a HashMap<Offsets, BacktrackInfo>) -> usize {
+    let mut total_len: usize = 0;
+
+    loop {
+        total_len += 1;
+
+        let backtrack = profiles.get(offsets).unwrap();
+
+        let Some(source) = &backtrack.source else {
+            break;
+        };
+
+        offsets = source;
+    }
+
+    total_len
+}
+
 /// Alignes multiple sequences into one
 pub fn align<'a, T: Hash + Eq + Clone + Debug>(seqs: &[&'a [T]]) -> Vec<&'a T> {
+    let start_offset = Offsets::with_len(seqs.len());
+
     let mut profiles: HashMap<Offsets, BacktrackInfo> = HashMap::from([(
-        Offsets::with_len(seqs.len()),
+        start_offset.clone(),
         BacktrackInfo {
-            cnt: 1,
+            total_len: 0,
             source: None,
         },
     )]);
 
-    // let mut profiles_stack: Vec<Offsets> = Vec::new();
+    // We store offsets in binary heap
+    // Because in dynamic programming we require
+    // specific order of item processing
+    let mut offsets_heap: BinaryHeap<Offsets> = BinaryHeap::new();
+    offsets_heap.push(start_offset.clone());
 
-    let mut profiles_stack: BinaryHeap<Offsets> = BinaryHeap::new();
+    // Dynamic programming loop
+    let mut counter = 0;
 
-    profiles_stack.push(Offsets::with_len(seqs.len()));
+    let mut next_items = Vec::new();
+    let mut next_possible_items = HashSet::new();
+    let mut next_ids = Vec::new();
 
     loop {
-        let Some(item) = profiles_stack.pop() else {
+        counter += 1;
+
+        let Some(prev) = offsets_heap.pop() else {
             break;
         };
 
-        println!("Processing {:?}", item);
+        let new_total_len = profiles.get(&prev).unwrap().total_len + 1;
 
-        let path_count = profiles.get(&item).unwrap().cnt.clone();
+        // Populate next items with all possible items
+        prev.all_possible_next(
+            seqs,
+            &mut next_items,
+            &mut next_possible_items,
+            &mut next_ids,
+        );
 
-        if item.is_finished(seqs) {
-            break;
-        }
+        for next in &next_items {
+            let Some(backtrack) = profiles.get_mut(&next) else {
+                profiles.insert(next.clone(), BacktrackInfo { total_len: new_total_len, source: Some(prev.clone()) });
+                offsets_heap.push(next.clone());
+                continue;
+            };
 
-        for next_item in item.all_possible_next(seqs) {
-            use std::collections::hash_map::Entry::*;
-            match profiles.entry(next_item.clone()) {
-                Occupied(mut entry) => {
-                    entry.get_mut().cnt += path_count;
-                }
-                Vacant(entry) => {
-                    // We found an item that we didn't process before
-                    // add it to the stack
-                    profiles_stack.push(next_item);
-
-                    let profile_path = BacktrackInfo {
-                        cnt: path_count,
-                        source: Some(item.clone()),
-                    };
-                    entry.insert(profile_path);
-                }
+            if backtrack.total_len > new_total_len {
+                backtrack.total_len = new_total_len;
+                backtrack.source = Some(prev.clone());
             }
         }
-
-        println!("Profile len: {}", profiles.len())
     }
+
+    println!("Number of iterations: {}", counter);
 
     let recovered = backtrack_full_path(&profiles, seqs);
 
-    backtrack_letters(&recovered, seqs)
+    let aligned = backtrack_letters(&recovered, seqs);
+
+    println!("Aligned length: {}", aligned.len());
+
+    aligned
 }
 
 #[cfg(test)]
@@ -297,12 +364,39 @@ mod tests {
             vec![28, 68, 67, 66, 65, 64, 2, 30],
         ];
 
+        // A B B A A A B B A B A B B B B
+        // A - B A - A - B A B A B - - B
+        // A B B A A - B B - - A B B B B
+        // A - - A A A B B A B A B B - -
+        // - B B - A A - B A B - - B B B
+
+        // ABAABABABB
+        // ABBAABBABBBB
+        // AAAABBABABB
+        // BBAABABBBB
+
         // let sequences = vec!["CD", "DABC", "DEF", "CEF"]
         //     .iter()
         //     .map(|x| x.chars().collect_vec())
         //     .collect_vec();
 
+        // A B B A A A B B A B A B B B B
+
+        // A B B A A B A B B A B B A B B
+
+        // A A B B A A B B A B B A B B
+        // A   B   A A B   A B   A B B
+        // A   B B A A B B A B B   B B
+        // A A     A A B B A B   A B B
+        //     B B A A B   A B B   B B
+
+        // let sequences = vec!["ABAABABABB", "ABBAABBABBBB", "AAAABBABABB", "BBAABABBBB"]
+        //     .iter()
+        //     .map(|x| x.chars().collect_vec())
+        //     .collect_vec();
+
         let slices = sequences.iter().map(|x| x.as_slice()).collect_vec();
+
         let result = align(&slices);
 
         println!("Result: {:?}", result);
