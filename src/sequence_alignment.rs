@@ -9,7 +9,7 @@
 // A D
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BinaryHeap, HashMap, HashSet},
     fmt::Debug,
     hash::Hash,
 };
@@ -19,6 +19,21 @@ use itertools::Itertools;
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
 struct Offsets {
     next_positions: Vec<usize>,
+}
+
+impl PartialOrd for Offsets {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.next_positions
+            .iter()
+            .sum::<usize>()
+            .partial_cmp(&other.next_positions.iter().sum::<usize>())
+    }
+}
+
+impl Ord for Offsets {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
+    }
 }
 
 impl Offsets {
@@ -106,12 +121,12 @@ struct BacktrackInfo {
 }
 
 fn get_finished<'a, T>(
-    profiles: &'a Vec<HashMap<Offsets, BacktrackInfo>>,
+    profiles: &'a HashMap<Offsets, BacktrackInfo>,
     seqs: &[&[T]],
 ) -> &'a Offsets {
     // Find all finished profiles
     let mut result: Vec<&Offsets> = Vec::new();
-    for (item, _) in profiles.last().unwrap() {
+    for (item, _) in profiles {
         if item.is_finished(seqs) {
             result.push(item);
         }
@@ -125,21 +140,22 @@ fn get_finished<'a, T>(
 }
 
 fn backtrack_full_path<'a, T>(
-    profiles: &'a Vec<HashMap<Offsets, BacktrackInfo>>,
+    profiles: &'a HashMap<Offsets, BacktrackInfo>,
     seqs: &[&[T]],
 ) -> Vec<&'a Offsets> {
     let mut result = Vec::new();
 
-    let mut current_item = Some(get_finished(profiles, seqs));
+    let mut current_item = get_finished(profiles, seqs);
 
-    for profile in profiles.iter().rev() {
-        // We're guaranteed to have an item here
-        let item = current_item.unwrap();
-
-        result.push(item);
+    loop {
+        result.push(current_item);
 
         // Update next current item (Will be None on last iteration)
-        current_item = profile.get(item).unwrap().source.as_ref();
+        let Some(value) = profiles.get(current_item).unwrap().source.as_ref() else {
+            break;
+        };
+
+        current_item = value;
     }
 
     result.reverse();
@@ -179,46 +195,54 @@ fn backtrack_letters<'a, T: Debug + Hash + Eq>(
 
 /// Alignes multiple sequences into one
 pub fn align<'a, T: Hash + Eq + Clone + Debug>(seqs: &[&'a [T]]) -> Vec<&'a T> {
-    let mut profiles: Vec<HashMap<Offsets, BacktrackInfo>> = Vec::new();
-    profiles.push(HashMap::from([(
+    let mut profiles: HashMap<Offsets, BacktrackInfo> = HashMap::from([(
         Offsets::with_len(seqs.len()),
         BacktrackInfo {
             cnt: 1,
             source: None,
         },
-    )]));
+    )]);
+
+    // let mut profiles_stack: Vec<Offsets> = Vec::new();
+
+    let mut profiles_stack: BinaryHeap<Offsets> = BinaryHeap::new();
+
+    profiles_stack.push(Offsets::with_len(seqs.len()));
 
     loop {
-        let profile = profiles.last().unwrap();
-        let mut profile_next: HashMap<Offsets, BacktrackInfo> =
-            HashMap::with_capacity(profile.len());
-        let mut found_shortest: bool = false;
-        for (item, path) in profile.iter() {
-            if item.is_finished(seqs) {
-                found_shortest = true;
-                continue;
-            }
-            for next_item in item.all_possible_next(seqs) {
-                use std::collections::hash_map::Entry::*;
-                match profile_next.entry(next_item) {
-                    Occupied(mut entry) => {
-                        entry.get_mut().cnt += path.cnt;
-                    }
-                    Vacant(entry) => {
-                        let profile_path = BacktrackInfo {
-                            cnt: path.cnt,
-                            source: Some(item.clone()),
-                        };
-                        entry.insert(profile_path);
-                    }
+        let Some(item) = profiles_stack.pop() else {
+            break;
+        };
+
+        println!("Processing {:?}", item);
+
+        let path_count = profiles.get(&item).unwrap().cnt.clone();
+
+        if item.is_finished(seqs) {
+            break;
+        }
+
+        for next_item in item.all_possible_next(seqs) {
+            use std::collections::hash_map::Entry::*;
+            match profiles.entry(next_item.clone()) {
+                Occupied(mut entry) => {
+                    entry.get_mut().cnt += path_count;
+                }
+                Vacant(entry) => {
+                    // We found an item that we didn't process before
+                    // add it to the stack
+                    profiles_stack.push(next_item);
+
+                    let profile_path = BacktrackInfo {
+                        cnt: path_count,
+                        source: Some(item.clone()),
+                    };
+                    entry.insert(profile_path);
                 }
             }
         }
-        if found_shortest {
-            break;
-        }
-        println!("Profile len: {}", profile_next.len());
-        profiles.push(profile_next)
+
+        println!("Profile len: {}", profiles.len())
     }
 
     let recovered = backtrack_full_path(&profiles, seqs);
@@ -264,10 +288,20 @@ mod tests {
         // let seq3 = vec!["A", "D"];
         // let seq4 = vec!["A", "B", "C"];
 
-        let sequences = vec!["CD", "DABC", "DEF", "CEF"]
-            .iter()
-            .map(|x| x.chars().collect_vec())
-            .collect_vec();
+        let sequences = vec![
+            vec![28, 29, 2, 69, 63, 70, 30, 82, 31, 81, 3],
+            vec![28, 68, 67, 29, 66, 65, 64, 2, 3],
+            vec![28, 68, 67, 29, 66, 65, 64, 2, 30, 3],
+            vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 31, 3],
+            vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 82, 31, 81, 3],
+            vec![28, 68, 67, 66, 65, 64, 2, 30],
+        ];
+
+        // let sequences = vec!["CD", "DABC", "DEF", "CEF"]
+        //     .iter()
+        //     .map(|x| x.chars().collect_vec())
+        //     .collect_vec();
+
         let slices = sequences.iter().map(|x| x.as_slice()).collect_vec();
         let result = align(&slices);
 
