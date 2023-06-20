@@ -17,19 +17,20 @@ use std::{
 use itertools::Itertools;
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
-struct ProfileItem {
+struct Offsets {
     next_positions: Vec<usize>,
 }
 
-impl ProfileItem {
+impl Offsets {
     fn with_len(len: usize) -> Self {
         let mut next_positions = Vec::with_capacity(len);
         for _ in 0..len {
             next_positions.push(0);
         }
-        ProfileItem { next_positions }
+        Offsets { next_positions }
     }
 
+    // Get all possible next profiles from a sequence
     fn iter_next<'a, T>(&self, seqs: &'a [&'a [T]]) -> Vec<Option<&'a T>> {
         let mut items = Vec::new();
         for (next_pos, seq) in self.next_positions.iter().zip(seqs.iter()) {
@@ -52,7 +53,7 @@ impl ProfileItem {
     }
 
     // Genreate all possible next profiles from the current one
-    fn all_possible_next<T: Hash + Eq + Clone + Debug>(&self, seqs: &[&[T]]) -> Vec<ProfileItem> {
+    fn all_possible_next<T: Hash + Eq + Clone + Debug>(&self, seqs: &[&[T]]) -> Vec<Offsets> {
         let mut next_items = Vec::new();
         let mut next_possible_items: HashSet<&T> = HashSet::new();
 
@@ -76,7 +77,7 @@ impl ProfileItem {
                     continue;
                 }
 
-                let mut next_item = ProfileItem {
+                let mut next_item = Offsets {
                     next_positions: self.next_positions.clone(),
                 };
 
@@ -99,17 +100,17 @@ impl ProfileItem {
 }
 
 #[derive(Clone, Debug)]
-struct ProfilePath {
+struct BacktrackInfo {
     cnt: usize,
-    source: Option<ProfileItem>,
+    source: Option<Offsets>,
 }
 
 fn get_finished<'a, T>(
-    profiles: &'a Vec<HashMap<ProfileItem, ProfilePath>>,
+    profiles: &'a Vec<HashMap<Offsets, BacktrackInfo>>,
     seqs: &[&[T]],
-) -> &'a ProfileItem {
+) -> &'a Offsets {
     // Find all finished profiles
-    let mut result: Vec<&ProfileItem> = Vec::new();
+    let mut result: Vec<&Offsets> = Vec::new();
     for (item, _) in profiles.last().unwrap() {
         if item.is_finished(seqs) {
             result.push(item);
@@ -118,15 +119,15 @@ fn get_finished<'a, T>(
 
     // Take some element as a final result. We're guaranteed to have at least one
     // result ant this point
-    let result: &ProfileItem = *result.first().unwrap();
+    let result: &Offsets = *result.first().unwrap();
 
     result
 }
 
-fn recover_full_path<'a, T>(
-    profiles: &'a Vec<HashMap<ProfileItem, ProfilePath>>,
+fn backtrack_full_path<'a, T>(
+    profiles: &'a Vec<HashMap<Offsets, BacktrackInfo>>,
     seqs: &[&[T]],
-) -> Vec<&'a ProfileItem> {
+) -> Vec<&'a Offsets> {
     let mut result = Vec::new();
 
     let mut current_item = Some(get_finished(profiles, seqs));
@@ -146,8 +147,8 @@ fn recover_full_path<'a, T>(
     result
 }
 
-fn recover_letters<'a, T: Debug + Hash + Eq>(
-    result: &[&ProfileItem],
+fn backtrack_letters<'a, T: Debug + Hash + Eq>(
+    result: &[&Offsets],
     seqs: &[&'a [T]],
 ) -> Vec<&'a T> {
     let mut letters_result: Vec<&T> = Vec::new();
@@ -178,10 +179,10 @@ fn recover_letters<'a, T: Debug + Hash + Eq>(
 
 /// Alignes multiple sequences into one
 pub fn align<'a, T: Hash + Eq + Clone + Debug>(seqs: &[&'a [T]]) -> Vec<&'a T> {
-    let mut profiles: Vec<HashMap<ProfileItem, ProfilePath>> = Vec::new();
+    let mut profiles: Vec<HashMap<Offsets, BacktrackInfo>> = Vec::new();
     profiles.push(HashMap::from([(
-        ProfileItem::with_len(seqs.len()),
-        ProfilePath {
+        Offsets::with_len(seqs.len()),
+        BacktrackInfo {
             cnt: 1,
             source: None,
         },
@@ -189,7 +190,7 @@ pub fn align<'a, T: Hash + Eq + Clone + Debug>(seqs: &[&'a [T]]) -> Vec<&'a T> {
 
     loop {
         let profile = profiles.last().unwrap();
-        let mut profile_next: HashMap<ProfileItem, ProfilePath> =
+        let mut profile_next: HashMap<Offsets, BacktrackInfo> =
             HashMap::with_capacity(profile.len());
         let mut found_shortest: bool = false;
         for (item, path) in profile.iter() {
@@ -204,7 +205,7 @@ pub fn align<'a, T: Hash + Eq + Clone + Debug>(seqs: &[&'a [T]]) -> Vec<&'a T> {
                         entry.get_mut().cnt += path.cnt;
                     }
                     Vacant(entry) => {
-                        let profile_path = ProfilePath {
+                        let profile_path = BacktrackInfo {
                             cnt: path.cnt,
                             source: Some(item.clone()),
                         };
@@ -220,9 +221,9 @@ pub fn align<'a, T: Hash + Eq + Clone + Debug>(seqs: &[&'a [T]]) -> Vec<&'a T> {
         profiles.push(profile_next)
     }
 
-    let recovered = recover_full_path(&profiles, seqs);
+    let recovered = backtrack_full_path(&profiles, seqs);
 
-    recover_letters(&recovered, seqs)
+    backtrack_letters(&recovered, seqs)
 }
 
 #[cfg(test)]
