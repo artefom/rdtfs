@@ -1,6 +1,6 @@
-#![allow(unused_imports)]
-#![allow(dead_code)]
-#![allow(unused_variables)]
+// #![allow(unused_imports)]
+// #![allow(dead_code)]
+// #![allow(unused_variables)]
 
 use std::{fs::OpenOptions, hash::Hash, io::BufReader, path::Path};
 
@@ -18,7 +18,7 @@ use progress::ProgressReader;
 
 use csv::CsvTableReader;
 
-use crate::{progress::progress_style_count, rides::TimetableGrouper, poa::align};
+use crate::{progress::progress_style_count, rides::TimetableGrouper, sequence_alignment::align};
 
 mod gtfs;
 
@@ -33,8 +33,6 @@ mod store;
 mod rides;
 
 mod sequence_alignment;
-
-mod poa;
 
 impl<T> gtfs::GtfsStore for T
 where
