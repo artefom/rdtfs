@@ -227,6 +227,8 @@ pub fn align<'a, T: Hash + Eq + Clone + Debug>(seqs: &[&'a [T]]) -> Vec<&'a T> {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+
     use super::align;
 
     #[test]
@@ -249,10 +251,10 @@ mod tests {
         // B C D
         // A D
 
-        let seq1 = vec![28, 29, 2, 69, 63, 70, 30, 82, 31, 81, 3];
-        let seq2 = vec![28, 68, 67, 29, 66, 65, 64, 2, 3];
-        let seq3 = vec![28, 68, 67, 29, 66, 65, 64, 2, 30, 3];
-        let seq4 = vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 31, 3];
+        // let seq1 = vec![28, 29, 2, 69, 63, 70, 30, 82, 31, 81, 3];
+        // let seq2 = vec![28, 68, 67, 29, 66, 65, 64, 2, 3];
+        // let seq3 = vec![28, 68, 67, 29, 66, 65, 64, 2, 30, 3];
+        // let seq4 = vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 31, 3];
         // let seq5 = vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 82, 31, 81, 3];
         // let seq6 = vec![28, 68, 67, 66, 65, 64, 2, 30];
 
@@ -261,10 +263,13 @@ mod tests {
         // let seq3 = vec!["A", "D"];
         // let seq4 = vec!["A", "B", "C"];
 
-        let result = align(&[
-            &seq1, &seq2, &seq3, &seq4,
-            // &seq5, &seq6
-        ]);
+        let sequences = vec!["CD", "DABC", "DEF", "CEF"]
+            .iter()
+            .map(|x| x.chars().collect_vec())
+            .collect_vec();
+        let slices = sequences.iter().map(|x| x.as_slice()).collect_vec();
+        let result = align(&slices);
+
         println!("Result: {:?}", result);
     }
 }
