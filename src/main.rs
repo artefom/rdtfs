@@ -34,6 +34,8 @@ mod rides;
 
 mod sequence_alignment;
 
+mod poa;
+
 impl<T> gtfs::GtfsStore for T
 where
     T: store::FileCollection,
