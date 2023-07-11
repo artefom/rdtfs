@@ -1,4 +1,6 @@
-use std::{collections::HashMap, fmt::Debug};
+/// Dynamic-programming alignment algorithm
+/// for partial-order DAGS
+use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
 use itertools::Itertools;
 
@@ -127,49 +129,50 @@ where
 }
 
 /// Directed-acyclic-graph for representation of partial order sequences
-pub trait Dag<T> {
+/// Where H - node handle
+pub trait Dag<T, H>
+where
+    H: Hash + Eq + PartialEq + Clone + Copy,
+{
     /// Get roots of dag, returns ids of elements
-    fn roots(&self) -> Vec<usize>;
-
-    /// Get number of nodes
-    fn len(&self) -> usize;
+    fn roots(&self) -> Vec<H>;
 
     /// Get leafs of a dag, returns ids of elements
-    fn leafs(&self) -> Vec<usize>;
+    fn leafs(&self) -> Vec<H>;
 
-    fn get_value(&self, element: usize) -> &T;
+    /// Get base element
+    fn base(&self, handle: H) -> &T;
 
     /// Get next eleents for specific element
-    fn next(&self, element: usize) -> Vec<usize>;
+    fn next(&self, handle: H) -> Vec<H>;
 
     /// Get previous elements for specific element
-    fn previous(&self, element: usize) -> Vec<usize>;
+    fn previous(&self, handle: H) -> Vec<H>;
 
     /// Topologically sort elements of dag
-    fn toposort(&self) -> Vec<usize>;
+    fn toposort(&self) -> Vec<H>;
 
     /// Returns 'depth' of all of the nodes
     /// the depth is minimum number of edges we need to visit
     /// to get to the specific node from the any of the root nodes
-    fn node_depth(&self) -> Vec<usize> {
-        let mut result = Vec::with_capacity(self.len());
-        result.resize(self.len(), self.len());
+    fn node_depth(&self) -> HashMap<H, usize> {
+        let mut result: HashMap<H, usize> = HashMap::new();
 
         for element in self.toposort() {
             let new_score = self
                 .previous(element)
                 .iter()
-                .map(|x| result[*x] + 1)
+                .map(|x| result.get(x).unwrap() + 1)
                 .min()
                 .unwrap_or(0);
-            result[element] = new_score;
+            result.insert(element, new_score);
         }
 
         result
     }
 }
 
-impl<T> Dag<T> for Vec<T> {
+impl<T> Dag<T, usize> for Vec<T> {
     fn roots(&self) -> Vec<usize> {
         if self.len() == 0 {
             return vec![];
@@ -199,11 +202,7 @@ impl<T> Dag<T> for Vec<T> {
         return vec![element - 1];
     }
 
-    fn len(&self) -> usize {
-        Vec::len(&self)
-    }
-
-    fn get_value(&self, element: usize) -> &T {
+    fn base(&self, element: usize) -> &T {
         self.get::<usize>(element).unwrap()
     }
 
@@ -214,52 +213,63 @@ impl<T> Dag<T> for Vec<T> {
 
 /// The same as regular sequence matching
 /// but operates over sequences with partial order
-pub fn partial_order_sequence_matching<'a, T, D>(
+pub fn partial_order_sequence_matching<'a, T, D, H>(
     seq1: &'a D,
     seq2: &'a D,
 ) -> Vec<(Option<&'a T>, Option<&'a T>)>
 where
     T: Eq + PartialEq + Clone + Debug,
-    D: Dag<T>,
+    D: Dag<T, H>,
+    H: Hash + Eq + PartialEq + Debug + Clone + Copy,
 {
-    let m = seq1.len();
-    let n = seq2.len();
+    // let m = seq1.len();
+    // let n = seq2.len();
 
-    let mut dp: HashMap<(usize, usize), i32> = HashMap::new();
-    let mut backtrack: HashMap<(usize, usize), (usize, usize)> = HashMap::new();
+    let mut dp: HashMap<(Option<H>, Option<H>), i32> = HashMap::new();
+    let mut backtrack: HashMap<(Option<H>, Option<H>), (Option<H>, Option<H>)> = HashMap::new();
 
     let gap_penalty: i32 = -1;
 
-    let mut seq1_depths = seq1.node_depth();
-    let mut seq2_depths = seq2.node_depth();
+    let seq1_depths = seq1.node_depth();
+    let seq2_depths = seq2.node_depth();
 
     // Add one extra depth
-    seq1_depths.push(seq1.leafs().iter().map(|x| seq1_depths[*x]).max().unwrap() + 1);
-    seq2_depths.push(seq2.leafs().iter().map(|x| seq2_depths[*x]).max().unwrap() + 1);
+    let seq1_max_depth = seq1.leafs().iter().map(|x| seq1_depths[x]).max().unwrap();
+    let seq2_max_depth = seq2.leafs().iter().map(|x| seq2_depths[x]).max().unwrap();
 
     // Fill starting gap penalties
     for i in seq1.toposort() {}
 
     // Fill starting gap penalties
-    for i in seq1.toposort().iter().chain(&[seq1.len()]) {
-        let score = (seq1_depths[*i] as i32) * gap_penalty;
+    for i in seq1.toposort() {
+        let score = (*seq1_depths.get(&i).unwrap() as i32) * gap_penalty;
         for root in seq2.roots() {
-            dp.insert((*i, root), score);
+            dp.insert((Some(i), Some(root)), score);
         }
     }
 
-    for j in seq2.toposort().iter().chain(&[seq2.len()]) {
-        let score = (seq2_depths[*j] as i32) * gap_penalty;
+    for j in seq2.toposort() {
+        let score = (*seq2_depths.get(&j).unwrap() as i32) * gap_penalty;
         for root in seq1.roots() {
-            dp.insert((root, *j), score);
+            dp.insert((Some(root), Some(j)), score);
         }
+    }
+
+    // Add 'fake' end nodes
+    let score = (seq1_max_depth as i32) * gap_penalty;
+    for root in seq2.roots() {
+        dp.insert((None, Some(root)), score);
+    }
+    let score = (seq2_max_depth as i32) * gap_penalty;
+    for root in seq1.roots() {
+        dp.insert((Some(root), None), score);
     }
 
     // Create scan order
     let mut scan_order = Vec::new();
     for i in seq1.toposort() {
         for j in seq2.toposort() {
-            scan_order.push((i, j));
+            scan_order.push((Some(i), Some(j)));
         }
     }
 
@@ -267,23 +277,23 @@ where
     for (i, j) in scan_order {
         let current_pos = (i, j);
 
-        let mut next_positions: Vec<(usize, usize)> = Vec::new();
+        let mut next_positions: Vec<(Option<H>, Option<H>)> = Vec::new();
 
-        let mut seq1_next = seq1.next(i);
-        let mut seq2_next = seq2.next(j);
+        let mut seq1_next = seq1.next(i.unwrap()).iter().map(|x| Some(*x)).collect_vec();
+        let mut seq2_next = seq2.next(j.unwrap()).iter().map(|x| Some(*x)).collect_vec();
 
         // Add 'fake' next for leaf nodes
         if seq1_next.len() == 0 {
-            seq1_next.push(seq1.len())
+            seq1_next.push(None)
         }
 
         if seq2_next.len() == 0 {
-            seq2_next.push(seq2.len())
+            seq2_next.push(None)
         }
 
-        for next_i in &seq1_next {
+        for next_i in seq1_next {
             for next_j in &seq2_next {
-                next_positions.push((*next_i, *next_j));
+                next_positions.push((next_i, *next_j));
             }
         }
 
@@ -292,31 +302,24 @@ where
             let prev_left = (i, next_j);
             let prev_up = (next_i, j);
 
-            let (pos, score) = if seq1.get_value(i) == seq2.get_value(j) {
+            let (pos, score) = if seq1.base(i.unwrap()) == seq2.base(j.unwrap()) {
                 // match
                 let current_score = dp.get(&current_pos).unwrap();
-
-                if dp.contains_key(&next_pos) {
-                    panic!("Duplicate key {:?}", next_pos)
-                };
-
                 (current_pos, current_score + 1)
             } else {
                 // gap
                 let left = dp.get(&prev_left).unwrap();
                 let up = dp.get(&prev_up).unwrap();
 
-                if dp.contains_key(&next_pos) {
-                    panic!("Duplicate key {:?}", next_pos)
-                };
-
-                // dp.insert(next_pos, std::cmp::max(*left, *up));
-
                 if left > up {
                     (prev_left, *left)
                 } else {
                     (prev_up, *up)
                 }
+            };
+
+            if dp.contains_key(&next_pos) {
+                panic!("Duplicate key {:?}", next_pos)
             };
 
             dp.insert(next_pos, score);
@@ -327,7 +330,7 @@ where
     println!("Dynamic profile");
     for i in seq1.toposort() {
         for j in seq2.toposort() {
-            let value = match dp.get(&(i, j)) {
+            let value = match dp.get(&(Some(i), Some(j))) {
                 Some(value) => format!("{}", value),
                 None => format!("-"),
             };
@@ -338,8 +341,8 @@ where
     }
 
     // backtrack solution
-    let mut i = m;
-    let mut j = n;
+    let mut i = None;
+    let mut j = None;
 
     let mut result = Vec::new();
 
@@ -347,12 +350,12 @@ where
         match backtrack.get(&(i, j)) {
             Some((prev_i, prev_j)) => {
                 let i_val = if *prev_i != i {
-                    Some(seq1.get_value(*prev_i))
+                    Some(seq1.base(prev_i.unwrap()))
                 } else {
                     None
                 };
                 let j_val = if *prev_j != j {
-                    Some(seq2.get_value(*prev_j))
+                    Some(seq2.base(prev_j.unwrap()))
                 } else {
                     None
                 };
@@ -363,8 +366,8 @@ where
                 j = *prev_j;
             }
             None => {
-                let i_val = seq1.get_value(i);
-                let j_val = seq2.get_value(j);
+                let i_val = seq1.base(i.unwrap());
+                let j_val = seq2.base(j.unwrap());
                 break;
             }
         }
