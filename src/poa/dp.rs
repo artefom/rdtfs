@@ -1,8 +1,15 @@
 /// Dynamic-programming alignment algorithm
 /// for partial-order DAGS
-use std::{collections::HashMap, fmt::Debug, hash::Hash};
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt::Debug,
+    hash::Hash,
+    marker::PhantomData,
+};
 
 use itertools::Itertools;
+
+use super::GraphNode;
 
 /// Matches two sequences using dynamic programming, returns a sequence of matched elements
 pub fn sequence_matching_dynamic_programming<'a, T>(
@@ -128,11 +135,38 @@ where
     result
 }
 
+// TODO: replace this with dfs
+fn iter_nodes<T, H, D>(dag: &D) -> Vec<H>
+where
+    H: Hash + Eq + PartialEq + Clone + Copy,
+    D: Dag<T, H>,
+{
+    let mut nodes: VecDeque<H> = dag.roots().iter().cloned().collect();
+
+    let mut result = Vec::new();
+
+    loop {
+        let Some(next_node) = nodes.pop_front() else {
+            break
+        };
+
+        for next_node in dag.next(next_node.clone()) {
+            nodes.push_back(next_node)
+        }
+
+        result.push(next_node);
+    }
+    result
+}
+
 /// Directed-acyclic-graph for representation of partial order sequences
 /// Where H - node handle
 pub trait Dag<T, H>
 where
     H: Hash + Eq + PartialEq + Clone + Copy,
+
+    // todo: wtf?
+    Self: Sized,
 {
     /// Get roots of dag, returns ids of elements
     fn roots(&self) -> Vec<H>;
@@ -150,7 +184,33 @@ where
     fn previous(&self, handle: H) -> Vec<H>;
 
     /// Topologically sort elements of dag
-    fn toposort(&self) -> Vec<H>;
+    fn toposort(&self) -> Vec<H> {
+        // Gets all nodes with no incoming edges.
+        // Let's call them roots
+        let mut roots: VecDeque<H> = self.roots().iter().cloned().collect();
+
+        // Number of incomming edges
+        let mut incoming_edges_count: HashMap<H, usize> = iter_nodes(self)
+            .iter()
+            .map(|node| (node.clone(), self.previous(*node).len()))
+            .collect();
+
+        // The final topologically sorted list
+        let mut sorted: Vec<H> = Vec::new();
+
+        while let Some(node) = roots.pop_front() {
+            sorted.push(node);
+            for out_node in self.next(node.clone()) {
+                let count = incoming_edges_count.get_mut(&out_node).unwrap();
+                *count -= 1;
+                if *count == 0 {
+                    roots.push_back(out_node);
+                }
+            }
+        }
+
+        sorted
+    }
 
     /// Returns 'depth' of all of the nodes
     /// the depth is minimum number of edges we need to visit
@@ -205,28 +265,88 @@ impl<T> Dag<T, usize> for Vec<T> {
     fn base(&self, element: usize) -> &T {
         self.get::<usize>(element).unwrap()
     }
+}
 
-    fn toposort(&self) -> Vec<usize> {
-        (0..self.len()).collect()
+struct ReverseDfs<'a, D, H, T>
+where
+    D: Dag<T, H>,
+    H: Hash + Eq + PartialEq + Clone + Copy,
+{
+    dag: &'a D,
+    next_nodes: VecDeque<H>,
+    _phantom1: PhantomData<H>,
+    _phantom2: PhantomData<T>,
+}
+
+impl<'a, D, H, T> ReverseDfs<'a, D, H, T>
+where
+    D: Dag<T, H>,
+    H: Hash + Eq + PartialEq + Clone + Copy,
+{
+    fn new(dag: &'a D) -> Self {
+        let roots = dag.leafs();
+        let mut next_nodes = VecDeque::with_capacity(roots.len());
+
+        for node in roots {
+            next_nodes.push_back(node)
+        }
+
+        ReverseDfs {
+            dag,
+            next_nodes,
+            _phantom1: PhantomData,
+            _phantom2: PhantomData,
+        }
+    }
+
+    fn from_node(dag: &'a D, nodes: Vec<H>) -> Self {
+        let mut next_nodes = VecDeque::with_capacity(nodes.len());
+        next_nodes.extend(nodes);
+        ReverseDfs {
+            dag,
+            next_nodes,
+            _phantom1: PhantomData,
+            _phantom2: PhantomData,
+        }
+    }
+}
+
+impl<'a, D, H, T> Iterator for ReverseDfs<'a, D, H, T>
+where
+    D: Dag<T, H>,
+    H: Hash + Eq + PartialEq + Clone + Copy,
+{
+    type Item = H;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let Some(next_node) = self.next_nodes.pop_front() else {
+            return None
+        };
+
+        self.next_nodes.extend(self.dag.previous(next_node).iter());
+
+        Some(next_node)
     }
 }
 
 /// The same as regular sequence matching
 /// but operates over sequences with partial order
-pub fn partial_order_sequence_matching<'a, T, D, H>(
-    seq1: &'a D,
-    seq2: &'a D,
-) -> Vec<(Option<&'a T>, Option<&'a T>)>
+pub fn partial_order_sequence_matching<'a, T, H1, H2, D1, D2>(
+    seq1: &'a D1,
+    seq2: &'a D2,
+) -> Vec<(Option<H1>, Option<H2>)>
 where
     T: Eq + PartialEq + Clone + Debug,
-    D: Dag<T, H>,
-    H: Hash + Eq + PartialEq + Debug + Clone + Copy,
+    H1: Hash + Eq + PartialEq + Debug + Clone + Copy,
+    H2: Hash + Eq + PartialEq + Debug + Clone + Copy,
+    D1: Dag<T, H1>,
+    D2: Dag<T, H2>,
 {
     // let m = seq1.len();
     // let n = seq2.len();
 
-    let mut dp: HashMap<(Option<H>, Option<H>), i32> = HashMap::new();
-    let mut backtrack: HashMap<(Option<H>, Option<H>), (Option<H>, Option<H>)> = HashMap::new();
+    let mut dp: HashMap<(Option<H1>, Option<H2>), i32> = HashMap::new();
+    let mut backtrack: HashMap<(Option<H1>, Option<H2>), (Option<H1>, Option<H2>)> = HashMap::new();
 
     let gap_penalty: i32 = -1;
 
@@ -234,8 +354,18 @@ where
     let seq2_depths = seq2.node_depth();
 
     // Add one extra depth
-    let seq1_max_depth = seq1.leafs().iter().map(|x| seq1_depths[x]).max().unwrap();
-    let seq2_max_depth = seq2.leafs().iter().map(|x| seq2_depths[x]).max().unwrap();
+    let seq1_max_depth = seq1
+        .leafs()
+        .iter()
+        .map(|x| seq1_depths[x])
+        .max()
+        .unwrap_or(0);
+    let seq2_max_depth = seq2
+        .leafs()
+        .iter()
+        .map(|x| seq2_depths[x])
+        .max()
+        .unwrap_or(0);
 
     // Fill starting gap penalties
     for i in seq1.toposort() {}
@@ -277,7 +407,7 @@ where
     for (i, j) in scan_order {
         let current_pos = (i, j);
 
-        let mut next_positions: Vec<(Option<H>, Option<H>)> = Vec::new();
+        let mut next_positions: Vec<(Option<H1>, Option<H2>)> = Vec::new();
 
         let mut seq1_next = seq1.next(i.unwrap()).iter().map(|x| Some(*x)).collect_vec();
         let mut seq2_next = seq2.next(j.unwrap()).iter().map(|x| Some(*x)).collect_vec();
@@ -318,12 +448,15 @@ where
                 }
             };
 
-            if dp.contains_key(&next_pos) {
-                panic!("Duplicate key {:?}", next_pos)
-            };
-
-            dp.insert(next_pos, score);
-            backtrack.insert(next_pos, pos);
+            if let Some(old_score) = dp.get(&next_pos) {
+                if score > *old_score {
+                    dp.insert(next_pos, score);
+                    backtrack.insert(next_pos, pos);
+                }
+            } else {
+                dp.insert(next_pos, score);
+                backtrack.insert(next_pos, pos);
+            }
         }
     }
 
@@ -347,29 +480,47 @@ where
     let mut result = Vec::new();
 
     loop {
-        match backtrack.get(&(i, j)) {
-            Some((prev_i, prev_j)) => {
-                let i_val = if *prev_i != i {
-                    Some(seq1.base(prev_i.unwrap()))
-                } else {
-                    None
-                };
-                let j_val = if *prev_j != j {
-                    Some(seq2.base(prev_j.unwrap()))
-                } else {
-                    None
-                };
+        let Some((prev_i, prev_j)) = backtrack.get(&(i, j)) else {
+            break;
+        };
 
-                result.push((i_val, j_val));
+        let i_val = if *prev_i != i {
+            Some(prev_i.unwrap())
+        } else {
+            None
+        };
 
-                i = *prev_i;
-                j = *prev_j;
-            }
-            None => {
-                let i_val = seq1.base(i.unwrap());
-                let j_val = seq2.base(j.unwrap());
-                break;
-            }
+        let j_val = if *prev_j != j {
+            Some(prev_j.unwrap())
+        } else {
+            None
+        };
+
+        result.push((i_val, j_val));
+
+        i = *prev_i;
+        j = *prev_j;
+    }
+
+    println!("Backtrack finished, next i and j are: {:?} and {:?}", i, j);
+
+    if let Some(i) = i {
+        for item in ReverseDfs::from_node(seq1, seq1.previous(i)) {
+            result.push((Some(item), None));
+        }
+    } else {
+        for item in ReverseDfs::new(seq1) {
+            result.push((Some(item), None));
+        }
+    }
+
+    if let Some(j) = j {
+        for item in ReverseDfs::from_node(seq2, seq2.previous(j)) {
+            result.push((None, Some(item)));
+        }
+    } else {
+        for item in ReverseDfs::new(seq2) {
+            result.push((None, Some(item)));
         }
     }
 
@@ -378,48 +529,35 @@ where
     result
 }
 
-#[cfg(test)]
-mod tests {
-    use itertools::Itertools;
+#[test]
+fn basic() {
+    // vec![28,         29,             2, 69, 63, 70, 30, 82, 31, 81, 3],
+    // vec![28, 68, 67, 29, 66, 65, 64, 2,                             3],
 
-    use super::*;
+    let sequences = vec![
+        vec![28, 29, 2, 69, 63, 70, 30, 82, 31, 81, 3],
+        vec![28, 68, 67, 29, 66, 65, 64, 2, 3],
+        vec![28, 68, 67, 29, 66, 65, 64, 2, 30, 3],
+        vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 31, 3],
+        vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 82, 31, 81, 3],
+        vec![28, 68, 67, 66, 65, 64, 2, 30],
+    ];
 
-    #[test]
-    fn basic() {
-        // vec![28,         29,             2, 69, 63, 70, 30, 82, 31, 81, 3],
-        // vec![28, 68, 67, 29, 66, 65, 64, 2,                             3],
+    let result = partial_order_sequence_matching(&sequences[0], &sequences[1]);
 
-        let sequences = vec![
-            vec![28, 29, 2, 69, 63, 70, 30, 82, 31, 81, 3],
-            vec![28, 68, 67, 29, 66, 65, 64, 2, 3],
-            vec![28, 68, 67, 29, 66, 65, 64, 2, 30, 3],
-            vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 31, 3],
-            vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 82, 31, 81, 3],
-            vec![28, 68, 67, 66, 65, 64, 2, 30],
-        ];
-
-        // let slices = sequences.iter().map(|x| x.as_slice()).collect_vec();
-
-        // let result = align(&slices);
-
-        // let result = sequence_matching_dynamic_programming(&sequences[0], &sequences[1]);
-
-        let result = partial_order_sequence_matching(&sequences[0], &sequences[1]);
-
-        for (item, _) in &result {
-            match item {
-                Some(value) => print!("{: <3}", value),
-                None => print!("{: <3}", '-'),
-            }
+    for (item, _) in &result {
+        match item {
+            Some(value) => print!("{: <3}", value),
+            None => print!("{: <3}", '-'),
         }
-        println!();
-
-        for (_, item) in &result {
-            match item {
-                Some(value) => print!("{: <3}", value),
-                None => print!("{: <3}", '-'),
-            }
-        }
-        println!();
     }
+    println!();
+
+    for (_, item) in &result {
+        match item {
+            Some(value) => print!("{: <3}", value),
+            None => print!("{: <3}", '-'),
+        }
+    }
+    println!();
 }

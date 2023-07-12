@@ -6,6 +6,10 @@ use std::{
 
 use itertools::Itertools;
 
+use crate::poa::dp::partial_order_sequence_matching;
+
+use self::dp::Dag;
+
 mod dp;
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy)]
@@ -19,31 +23,90 @@ impl Debug for GraphNode {
     }
 }
 
-struct GraphNodeInfo<'a, T> {
-    base: &'a T,
+struct GraphNodeInfo<T> {
+    base: T,
 }
 
-struct PoaGraph<'a, T> {
+struct PoaGraph<T> {
     nodes: Vec<GraphNode>,
     incoming_edges: HashMap<GraphNode, HashSet<GraphNode>>,
     outgoing_edges: HashMap<GraphNode, HashSet<GraphNode>>,
 
     // Info attached to nodes
-    node_info: HashMap<GraphNode, GraphNodeInfo<'a, T>>,
+    node_info: HashMap<GraphNode, GraphNodeInfo<T>>,
 
     // For adding new nodes
     next_node_id: usize,
 }
 
-struct Alignment<'a, T> {
+struct Alignment<T> {
     node: Option<GraphNode>,
-    base: Option<&'a T>,
+    base: Option<T>,
 }
 
-
-impl<'a, T> PoaGraph<'a, T>
+impl<'a, T> Dag<T, GraphNode> for PoaGraph<T>
 where
-    T: Eq + PartialEq + Debug,
+    T: PartialEq + Eq + Debug,
+{
+    fn roots(&self) -> Vec<GraphNode> {
+        let mut result = Vec::new();
+
+        for item in &self.nodes {
+            if !self.incoming_edges.contains_key(item) {
+                result.push(item.clone())
+            }
+        }
+
+        result
+    }
+
+    fn leafs(&self) -> Vec<GraphNode> {
+        let mut result = Vec::new();
+
+        for item in &self.nodes {
+            if !self.outgoing_edges.contains_key(item) {
+                result.push(item.clone())
+            }
+        }
+
+        result
+    }
+
+    fn base(&self, handle: GraphNode) -> &T {
+        &self.node_info.get(&handle).unwrap().base
+    }
+
+    fn next(&self, handle: GraphNode) -> Vec<GraphNode> {
+        let mut result = Vec::new();
+
+        let Some(outgoing_edges) = self.outgoing_edges.get(&handle) else {
+            return result
+        };
+
+        for node in outgoing_edges {
+            result.push(node.clone())
+        }
+
+        result
+    }
+
+    fn previous(&self, handle: GraphNode) -> Vec<GraphNode> {
+        let mut result = Vec::new();
+
+        let Some(incoming_edges) = self.incoming_edges.get(&handle) else {
+            return result
+        };
+        for node in incoming_edges {
+            result.push(node.clone())
+        }
+
+        result
+    }
+}
+
+impl<T> PoaGraph<T>
+where
+    T: Eq + PartialEq + Debug + Clone + Copy,
 {
     fn new() -> Self {
         PoaGraph {
@@ -66,168 +129,29 @@ where
             .collect()
     }
 
-    /// Perform a topological sort of the graph nodes.
-    /// Note: Assumes that the graph is a DAG, so it doesn't check for cycles.
-    fn topological_sort(&self) -> Vec<GraphNode> {
-        // Gets all nodes with no incoming edges.
-        // Let's call them roots
-        let mut roots: VecDeque<GraphNode> = self
-            .nodes
-            .iter()
-            .cloned()
-            .filter(|node| !self.incoming_edges.contains_key(node))
-            .collect();
-
-        // Number of incomming edges
-        let mut incoming_edges_count: HashMap<GraphNode, usize> = self
-            .incoming_edges
-            .iter()
-            .map(|(key, value)| (key.clone(), value.len()))
-            .collect();
-
-        // The final topologically sorted list
-        let mut sorted: Vec<GraphNode> = Vec::new();
-
-        while let Some(node) = roots.pop_front() {
-            sorted.push(node);
-
-            let Some(outgoing_edges) = self.outgoing_edges.get(&node) else {
-                continue;
-            };
-
-            for out_node in outgoing_edges {
-                let count = incoming_edges_count.get_mut(out_node).unwrap();
-                *count -= 1;
-                if *count == 0 {
-                    roots.push_back(*out_node);
-                }
-            }
-        }
-
-        sorted
-    }
-
     /// Align new sequence to the existing graph
-    fn align(&self, sequence: &'a [T]) -> Vec<Alignment<'a, T>> {
-        // Corner-case when empty
-        if sequence.len() == 0 {
-            return Vec::new();
-        }
+    fn align(&self, sequence: &Vec<T>) -> Vec<Alignment<T>> {
+        let alignment = partial_order_sequence_matching(self, sequence);
 
-        // Return early of graph is empty
-        if self.nodes.len() == 0 {
-            let mut result = Vec::new();
+        let mut result: Vec<Alignment<T>> = Vec::with_capacity(alignment.capacity());
 
-            for base in sequence {
-                result.push(Alignment {
-                    node: None,
-                    base: Some(base),
-                })
-            }
-
-            return result;
-        }
-
-        println!("Aligining {:?}", sequence);
-
-        let bases = self
-            .topological_sort()
-            .iter()
-            .map(|x| self.node_info[x].base)
-            .collect_vec();
-
-        println!("toposort {:?}", self.topological_sort());
-        println!("bases: {:?}", bases);
-
-        println!("Incomming edges {:?}", self.incoming_edges);
-        println!("Outgoing edges {:?}", self.outgoing_edges);
-        println!();
-
-        // Dynamic programming scores
-        let gap_score: i64 = -1;
-
-        // Initialize dynamic programming data
-        // maps specific graph node and offset to score and backtrack info
-        let mut dp_data: HashMap<(GraphNode, i64), i64> = HashMap::new();
-
-        // Scores for matches and mismatches
-        let mismatch_score: i64 = -100;
-        let match_score: i64 = 10;
-        let gap_score: i64 = -1;
-
-        for node in self.topological_sort() {
-            println!("Computing for {:?}", node);
-
-            // This must exist
-            let base = self.node_info[&node].base;
-
-            // Get a list of incomming edges (if it is empty, we're having a root node)
-            let Some(incomming_edges) = self.incoming_edges.get(&node) else {
-                // Process a root node
-
-                for offset in 0..sequence.len() {
-                    let offset_i64: i64 =  offset.try_into().unwrap();
-                    let num_skipped: i64 = offset.try_into().unwrap();
-                    
-                    // Insert match
-                    if *base == sequence[offset] {
-                        dp_data.insert((node, offset_i64), num_skipped * -1 + match_score);
-                    } else {
-                        dp_data.insert((node, offset_i64), num_skipped * -1 + mismatch_score);
-                    }
-                    
-                }
-
-                // Insert gap
-                dp_data.insert((node, -1), gap_score);
-                println!("Result dp data: {:?}", dp_data);
-                continue;
+        for (left, right) in alignment {
+            let base = if let Some(index) = right {
+                Some(&sequence[index])
+            } else {
+                None
             };
 
-            for offset in 1..sequence.len() {
-                println!("Computing offset {:?}", offset);
-                let offset: i64 = offset.try_into().unwrap();
-
-                let mut prev_positions: Vec<(GraphNode, i64, i64)> = Vec::new();
-
-                // Skip node, gap
-                if dp_data.contains_key(&(node, offset - 1)) {
-                    prev_positions.push((node, offset - 1, gap_score));
-                } else {
-                    println!("Could not add previous position {:?} - it does not exist", (node,offset-1));
-                }
-
-                println!("Incomming edges: {:?}", incomming_edges);
-
-                for prev_node in incomming_edges {
-                    // Skip offset, gap
-                    prev_positions.push((*prev_node, offset, -1));
-
-                    // Increment both node and offset (match)
-                    if offset > 0 {
-                        prev_positions.push((*prev_node, offset - 1, 1));
-                    }
-                }
-
-                println!("Prev positions: {:?}", prev_positions);
-
-                // Calc max new score
-                let mut new_scores: Vec<(GraphNode, i64, i64)> = Vec::new();
-                for (prev_node, prev_offset, score_delta) in prev_positions {
-                    let new_score = dp_data[&(prev_node, prev_offset)] + score_delta;
-                    new_scores.push((prev_node, prev_offset, new_score));
-                }
-
-                println!("New scores: {:?}", new_scores);
-            }
-
-            println!("Result dp data: {:?}", dp_data);
+            result.push(Alignment {
+                node: left,
+                base: base.cloned(),
+            })
         }
 
-        todo!()
+        result
     }
 
-    fn add_node(&mut self, info: GraphNodeInfo<'a, T>) -> GraphNode {
+    fn add_node(&mut self, info: GraphNodeInfo<T>) -> GraphNode {
         let graph_node = GraphNode {
             id: self.next_node_id,
         };
@@ -251,17 +175,19 @@ where
             .insert(to);
     }
 
-    fn add(&mut self, sequence: &'a [T]) {
+    fn add(&mut self, sequence: &Vec<T>) {
         let alignment = self.align(sequence);
+
+        println!("Received alignment");
 
         let mut last_node = None;
 
         for alignment in alignment {
             let next_node = match (alignment.node, alignment.base) {
-                (None, None) => todo!(),
+                (None, None) => todo!(), // This should not happen
                 (None, Some(base)) => self.add_node(GraphNodeInfo { base }),
-                (Some(node), None) => todo!(),
-                (Some(node), Some(base)) => todo!(),
+                (Some(node), None) => continue, // Node is skipped, do not add edge
+                (Some(node), Some(base)) => node, // Match, everything is good
             };
 
             if let Some(last_node) = last_node {
@@ -274,36 +200,49 @@ where
 }
 
 /// Alignes multiple sequences into one
-pub fn align<'a, T: Hash + Eq + Clone + Debug>(seqs: &[&'a [T]]) -> Vec<&'a T> {
+pub fn align<'a, T: Hash + Eq + Clone + Debug + Copy>(seqs: &[&'a Vec<T>]) -> Vec<&'a T> {
     let mut graph = PoaGraph::new();
 
     for sequence in seqs {
         graph.add(sequence);
     }
 
+    println!();
+    println!("flowchart TD");
+    for prev in &graph.nodes {
+        for next in graph.next(*prev) {
+            let prev_base = graph.base(prev.clone());
+            let next_base = graph.base(next.clone());
+            println!("    {prev:?}({prev_base:?}) --> {next:?}({next_base:?})");
+        }
+    }
+    println!();
+
+    println!("Alignment graph formed, check it out");
+
     todo!()
 }
 
-#[cfg(test)]
-mod tests {
-    use itertools::Itertools;
+#[test]
+fn basic() {
+    let vec1 = vec![1, 2, 3, 5];
 
-    use super::align;
+    let vec2 = vec![99, 98];
 
-    #[test]
-    fn basic() {
-        let sequences = vec![
-            vec![28, 29, 2, 69, 63, 70, 30, 82, 31, 81, 3],
-            vec![28, 68, 67, 29, 66, 65, 64, 2, 3],
-            vec![28, 68, 67, 29, 66, 65, 64, 2, 30, 3],
-            vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 31, 3],
-            vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 82, 31, 81, 3],
-            vec![28, 68, 67, 66, 65, 64, 2, 30],
-        ];
+    let vec3 = vec![3, 5, 99, 98];
 
-        let slices = sequences.iter().map(|x| x.as_slice()).collect_vec();
+    let result = align(&vec![&vec1, &vec2, &vec3]);
 
-        let result = align(&slices);
+    // let sequences = vec![
+    //     vec![28, 29, 2, 69, 63, 70, 30, 82, 31, 81, 3],
+    //     vec![28, 68, 67, 29, 66, 65, 64, 2, 3],
+    //     vec![28, 68, 67, 29, 66, 65, 64, 2, 30, 3],
+    //     vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 31, 3],
+    //     vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 82, 31, 81, 3],
+    //     vec![28, 68, 67, 66, 65, 64, 2, 30],
+    // ];
 
-    }
+    // let slices = sequences.iter().collect_vec();
+
+    // let result = align(&slices);
 }
