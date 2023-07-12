@@ -502,8 +502,6 @@ where
         j = *prev_j;
     }
 
-    println!("Backtrack finished, next i and j are: {:?} and {:?}", i, j);
-
     if let Some(i) = i {
         for item in ReverseDfs::from_node(seq1, seq1.previous(i)) {
             result.push((Some(item), None));

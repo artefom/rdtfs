@@ -39,9 +39,9 @@ struct PoaGraph<T> {
     next_node_id: usize,
 }
 
-struct Alignment<T> {
+struct Alignment {
     node: Option<GraphNode>,
-    base: Option<T>,
+    offset: Option<usize>,
 }
 
 impl<'a, T> Dag<T, GraphNode> for PoaGraph<T>
@@ -130,25 +130,8 @@ where
     }
 
     /// Align new sequence to the existing graph
-    fn align(&self, sequence: &Vec<T>) -> Vec<Alignment<T>> {
-        let alignment = partial_order_sequence_matching(self, sequence);
-
-        let mut result: Vec<Alignment<T>> = Vec::with_capacity(alignment.capacity());
-
-        for (left, right) in alignment {
-            let base = if let Some(index) = right {
-                Some(&sequence[index])
-            } else {
-                None
-            };
-
-            result.push(Alignment {
-                node: left,
-                base: base.cloned(),
-            })
-        }
-
-        result
+    fn align(&self, sequence: &Vec<T>) -> Vec<(Option<GraphNode>, Option<usize>)> {
+        partial_order_sequence_matching(self, sequence)
     }
 
     fn add_node(&mut self, info: GraphNodeInfo<T>) -> GraphNode {
@@ -182,8 +165,10 @@ where
 
         let mut last_node = None;
 
-        for alignment in alignment {
-            let next_node = match (alignment.node, alignment.base) {
+        for (node, offset) in alignment {
+            let base = offset.map(|x| sequence[x]);
+
+            let next_node = match (node, base) {
                 (None, None) => todo!(), // This should not happen
                 (None, Some(base)) => self.add_node(GraphNodeInfo { base }),
                 (Some(node), None) => continue, // Node is skipped, do not add edge
@@ -220,29 +205,35 @@ pub fn align<'a, T: Hash + Eq + Clone + Debug + Copy>(seqs: &[&'a Vec<T>]) -> Ve
 
     println!("Alignment graph formed, check it out");
 
+    for node in graph.toposort() {
+        let base = graph.base(node);
+        print!("{base:?} ");
+    }
+    println!();
+
     todo!()
 }
 
 #[test]
 fn basic() {
-    let vec1 = vec![1, 2, 3, 5];
+    // let vec1 = vec![1, 2, 3, 5];
 
-    let vec2 = vec![99, 98];
+    // // let vec2 = vec![99, 98];
 
-    let vec3 = vec![3, 5, 99, 98];
+    // let vec3 = vec![3, 5, 99, 98];
 
-    let result = align(&vec![&vec1, &vec2, &vec3]);
+    // let result = align(&vec![&vec1, &vec3]);
 
-    // let sequences = vec![
-    //     vec![28, 29, 2, 69, 63, 70, 30, 82, 31, 81, 3],
-    //     vec![28, 68, 67, 29, 66, 65, 64, 2, 3],
-    //     vec![28, 68, 67, 29, 66, 65, 64, 2, 30, 3],
-    //     vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 31, 3],
-    //     vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 82, 31, 81, 3],
-    //     vec![28, 68, 67, 66, 65, 64, 2, 30],
-    // ];
+    let sequences = vec![
+        vec![28, 29, 2, 69, 63, 70, 30, 82, 31, 81, 3],
+        vec![28, 68, 67, 29, 66, 65, 64, 2, 3],
+        vec![28, 68, 67, 29, 66, 65, 64, 2, 30, 3],
+        vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 31, 3],
+        vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 82, 31, 81, 3],
+        vec![28, 68, 67, 66, 65, 64, 2, 30],
+    ];
 
-    // let slices = sequences.iter().collect_vec();
+    let slices = sequences.iter().collect_vec();
 
-    // let result = align(&slices);
+    let result = align(&slices);
 }
