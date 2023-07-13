@@ -259,28 +259,10 @@ pub fn align<T: Hash + Eq + Clone + Debug + Copy>(seqs: &[&Vec<T>]) -> (Vec<T>, 
     (aligned_sequence, sequence_offsets)
 }
 
-#[test]
-fn test() {
-    let sequences = vec![
-        vec![28, 29, 2, 69, 63, 70, 30, 82, 31, 81, 3],
-        vec![28, 68, 67, 29, 66, 65, 64, 2, 3],
-        vec![28, 68, 67, 29, 66, 65, 64, 2, 30, 3],
-        vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 31, 3],
-        vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 82, 31, 81, 3],
-        vec![28, 68, 67, 66, 65, 64, 2, 30],
-    ];
-
-    let slices = sequences.iter().collect_vec();
-
-    let (consensus, alignments) = align(&slices);
-
-    let mut table = HashMap::new();
-    for (seq_id, aligment) in alignments.iter().enumerate() {
-        for (seq_offset, offset) in aligment.iter().enumerate() {
-            table.insert((seq_id, *offset), sequences[seq_id][seq_offset]);
-        }
-    }
-
+pub fn print_alignment<T>(sequences: &[&Vec<T>], consensus: Vec<T>, alignments: Vec<Vec<usize>>)
+where
+    T: Debug + Copy + Clone,
+{
     println!();
     println!("Aligned table");
 
@@ -293,6 +275,13 @@ fn test() {
         print!("---")
     }
     println!();
+
+    let mut table = HashMap::new();
+    for (seq_id, aligment) in alignments.iter().enumerate() {
+        for (seq_offset, offset) in aligment.iter().enumerate() {
+            table.insert((seq_id, *offset), sequences[seq_id][seq_offset]);
+        }
+    }
 
     for (seq_id, seq) in sequences.iter().enumerate() {
         for offset in 0..consensus.len() {
@@ -308,4 +297,38 @@ fn test() {
         println!()
     }
     println!();
+}
+
+#[test]
+fn test() {
+    let sequences = vec![
+        vec![28, 29, 2, 69, 63, 70, 30, 82, 31, 81, 3],
+        vec![28, 68, 67, 29, 66, 65, 64, 2, 3],
+        vec![28, 68, 67, 29, 66, 65, 64, 2, 30, 3],
+        vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 31, 3],
+        vec![28, 68, 67, 29, 66, 65, 64, 2, 69, 63, 70, 30, 82, 31, 81, 3],
+        vec![28, 68, 67, 66, 65, 64, 2, 30],
+    ];
+
+    // [27, 70, 55, 24, 69, 68, 67, 25, 66, 65, 64, 47, 63, 48, 62, 12
+    let sequences = vec![
+        vec![27, 24, 25, 66, 65, 64, 47, 63, 48, 62, 12],
+        vec![27, 70, 55, 24, 69, 68, 67, 25, 12],
+        vec![27, 70, 55, 24, 69, 68, 67, 25, 47, 12],
+        vec![27, 70, 55, 24, 69, 68, 67, 25, 66, 65, 64, 47, 48, 12],
+        vec![
+            27, 70, 55, 24, 69, 68, 67, 25, 66, 65, 64, 47, 63, 48, 62, 12,
+        ],
+        vec![27, 70, 55, 69, 68, 67, 25, 47],
+    ];
+
+    let slices = sequences.iter().collect_vec();
+
+    let (consensus, alignments) = align(&slices);
+
+    print_alignment(
+        sequences.iter().collect_vec().as_slice(),
+        consensus,
+        alignments,
+    );
 }

@@ -18,7 +18,9 @@ use progress::ProgressReader;
 
 use csv::CsvTableReader;
 
-use crate::{progress::progress_style_count, rides::TimetableGrouper, sequence_alignment::align};
+use crate::{
+    poa::align, poa::print_alignment, progress::progress_style_count, rides::TimetableGrouper,
+};
 
 mod gtfs;
 
@@ -31,8 +33,6 @@ mod progress;
 mod store;
 
 mod rides;
-
-mod sequence_alignment;
 
 mod poa;
 
@@ -308,14 +308,18 @@ fn main() -> Result<()> {
     let grouped = grouper.finalize();
 
     for stop_seqs in grouped.mapping {
-        if stop_seqs.len() > 10 {
+        if stop_seqs.len() > 100 {
             println!("Cluster length is too big: {}", stop_seqs.len());
             continue;
         }
-        println!("Cluster {:?}", stop_seqs);
+        // println!("Cluster {:?}", stop_seqs);
+
         let seq_inner = stop_seqs.iter().map(|x| x.as_ref()).collect_vec();
-        let aligned = align(&seq_inner);
-        println!("Aligned: {:?}", aligned);
+
+        println!("Aligning cluster of size {}", stop_seqs.len());
+        let (consensus, alignments) = align(&seq_inner);
+
+        poa::print_alignment(seq_inner.as_slice(), consensus, alignments);
     }
 
     Ok(())
