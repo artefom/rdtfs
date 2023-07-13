@@ -25,6 +25,9 @@ impl Debug for GraphNode {
 
 struct GraphNodeInfo<T> {
     base: T,
+
+    // Mapping to sequence id positions
+    positions: Vec<(usize, usize)>,
 }
 
 struct PoaGraph<T> {
@@ -44,7 +47,7 @@ struct Alignment {
     offset: Option<usize>,
 }
 
-impl<'a, T> Dag<T, GraphNode> for PoaGraph<T>
+impl<T> Dag<T, GraphNode> for PoaGraph<T>
 where
     T: PartialEq + Eq + Debug,
 {
@@ -130,7 +133,7 @@ where
     }
 
     /// Align new sequence to the existing graph
-    fn align(&self, sequence: &Vec<T>) -> Vec<(Option<GraphNode>, Option<usize>)> {
+    fn align(&self, sequence: &Vec<T>) -> (Option<i32>, Vec<(Option<GraphNode>, Option<usize>)>) {
         partial_order_sequence_matching(self, sequence)
     }
 
@@ -158,21 +161,31 @@ where
             .insert(to);
     }
 
-    fn add(&mut self, sequence: &Vec<T>) {
-        let alignment = self.align(sequence);
-
-        println!("Received alignment");
+    fn add(&mut self, sequence_id: usize, sequence: &Vec<T>) {
+        let (_, alignment) = self.align(sequence);
 
         let mut last_node = None;
 
         for (node, offset) in alignment {
-            let base = offset.map(|x| sequence[x]);
+            // let base = offset.map(|x| sequence[x]);
 
-            let next_node = match (node, base) {
+            let next_node = match (node, offset) {
                 (None, None) => todo!(), // This should not happen
-                (None, Some(base)) => self.add_node(GraphNodeInfo { base }),
+                (None, Some(offset)) => self.add_node(GraphNodeInfo {
+                    base: sequence[offset],
+                    positions: vec![(sequence_id, offset)],
+                }),
                 (Some(node), None) => continue, // Node is skipped, do not add edge
-                (Some(node), Some(base)) => node, // Match, everything is good
+                (Some(node), Some(offset)) => {
+                    let node_info = self.node_info.get_mut(&node).unwrap();
+
+                    if node_info.positions.contains(&(sequence_id, offset)) {
+                        panic!("Duplicate position")
+                    };
+
+                    node_info.positions.push((sequence_id, offset));
+                    node
+                } // Match, everything is good
             };
 
             if let Some(last_node) = last_node {
@@ -185,45 +198,69 @@ where
 }
 
 /// Alignes multiple sequences into one
-pub fn align<'a, T: Hash + Eq + Clone + Debug + Copy>(seqs: &[&'a Vec<T>]) -> Vec<&'a T> {
+pub fn align<T: Hash + Eq + Clone + Debug + Copy>(seqs: &[&Vec<T>]) -> (Vec<T>, Vec<Vec<usize>>) {
     let mut graph = PoaGraph::new();
 
-    for sequence in seqs {
-        graph.add(sequence);
+    let mut unmerged_sequences = seqs.iter().enumerate().collect_vec();
+
+    // Start from the longest sequence
+    let greatest_sequence = unmerged_sequences
+        .iter()
+        .position_max_by_key(|x| x.1.len())
+        .unwrap();
+    let (greatest_sequence_id, greatest_sequence) =
+        unmerged_sequences.swap_remove(greatest_sequence);
+
+    graph.add(greatest_sequence_id, greatest_sequence);
+
+    // Add most fitting sequences on each iteration
+    loop {
+        let best_alignment = unmerged_sequences
+            .iter()
+            .enumerate()
+            .map(|(idx, (_, seq))| (idx, graph.align(seq).0))
+            .filter_map(|(idx, score)| {
+                let score = match score {
+                    Some(score) => score,
+                    None => return None,
+                };
+                Some((idx, score))
+            })
+            .max_by_key(|(seq_id, score)| *score);
+
+        let Some((best_idx, _)) = best_alignment else {
+            break;
+        };
+        let (best_seq_id, best_seq) = unmerged_sequences.get(best_idx).unwrap();
+        graph.add(*best_seq_id, best_seq);
+        unmerged_sequences.swap_remove(best_idx);
     }
 
-    println!();
-    println!("flowchart TD");
-    for prev in &graph.nodes {
-        for next in graph.next(*prev) {
-            let prev_base = graph.base(prev.clone());
-            let next_base = graph.base(next.clone());
-            println!("    {prev:?}({prev_base:?}) --> {next:?}({next_base:?})");
+    // Aligned sequence offset
+    let mut sequence_offsets: Vec<Vec<usize>> = Vec::with_capacity(seqs.len());
+    for i in 0..seqs.len() {
+        sequence_offsets.push(Vec::new());
+    }
+
+    let mut aligned_sequence = Vec::new();
+
+    for (node_seq_id, node) in graph.toposort().iter().enumerate() {
+        let node_info = graph.node_info.get(node).unwrap();
+
+        let base = graph.base(*node);
+
+        aligned_sequence.push(base.clone());
+
+        for (seq_id, _) in &node_info.positions {
+            sequence_offsets.get_mut(*seq_id).unwrap().push(node_seq_id)
         }
     }
-    println!();
 
-    println!("Alignment graph formed, check it out");
-
-    for node in graph.toposort() {
-        let base = graph.base(node);
-        print!("{base:?} ");
-    }
-    println!();
-
-    todo!()
+    (aligned_sequence, sequence_offsets)
 }
 
 #[test]
-fn basic() {
-    // let vec1 = vec![1, 2, 3, 5];
-
-    // // let vec2 = vec![99, 98];
-
-    // let vec3 = vec![3, 5, 99, 98];
-
-    // let result = align(&vec![&vec1, &vec3]);
-
+fn test() {
     let sequences = vec![
         vec![28, 29, 2, 69, 63, 70, 30, 82, 31, 81, 3],
         vec![28, 68, 67, 29, 66, 65, 64, 2, 3],
@@ -235,5 +272,40 @@ fn basic() {
 
     let slices = sequences.iter().collect_vec();
 
-    let result = align(&slices);
+    let (consensus, alignments) = align(&slices);
+
+    let mut table = HashMap::new();
+    for (seq_id, aligment) in alignments.iter().enumerate() {
+        for (seq_offset, offset) in aligment.iter().enumerate() {
+            table.insert((seq_id, *offset), sequences[seq_id][seq_offset]);
+        }
+    }
+
+    println!();
+    println!("Aligned table");
+
+    for letter in &consensus {
+        print!("{letter: >3?}")
+    }
+    println!();
+
+    for letter in &consensus {
+        print!("---")
+    }
+    println!();
+
+    for (seq_id, seq) in sequences.iter().enumerate() {
+        for offset in 0..consensus.len() {
+            match table.get(&(seq_id, offset)) {
+                Some(value) => {
+                    print!("{value: >3?}")
+                }
+                None => {
+                    print!("{: >3}", '-')
+                }
+            }
+        }
+        println!()
+    }
+    println!();
 }

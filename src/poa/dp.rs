@@ -84,18 +84,18 @@ where
         backtrack.insert(next_pos, pos);
     }
 
-    println!("Resulting Dynamic profile");
-    for i in 0..m {
-        for j in 0..n {
-            let value = match dp.get(&(i, j)) {
-                Some(value) => format!("{}", value),
-                None => format!("-"),
-            };
+    // println!("Resulting Dynamic profile");
+    // for i in 0..m {
+    //     for j in 0..n {
+    //         let value = match dp.get(&(i, j)) {
+    //             Some(value) => format!("{}", value),
+    //             None => format!("-"),
+    //         };
 
-            print!("{: >4}", value)
-        }
-        println!()
-    }
+    //         print!("{: >4}", value)
+    //     }
+    //     println!()
+    // }
 
     // backtrack solution
     let mut i = m;
@@ -334,7 +334,7 @@ where
 pub fn partial_order_sequence_matching<'a, T, H1, H2, D1, D2>(
     seq1: &'a D1,
     seq2: &'a D2,
-) -> Vec<(Option<H1>, Option<H2>)>
+) -> (Option<i32>, Vec<(Option<H1>, Option<H2>)>)
 where
     T: Eq + PartialEq + Clone + Debug,
     H1: Hash + Eq + PartialEq + Debug + Clone + Copy,
@@ -435,16 +435,16 @@ where
             let (pos, score) = if seq1.base(i.unwrap()) == seq2.base(j.unwrap()) {
                 // match
                 let current_score = dp.get(&current_pos).unwrap();
-                (current_pos, current_score + 1)
+                (current_pos, current_score + 2)
             } else {
                 // gap
                 let left = dp.get(&prev_left).unwrap();
                 let up = dp.get(&prev_up).unwrap();
 
                 if left > up {
-                    (prev_left, *left)
+                    (prev_left, *left - 1)
                 } else {
-                    (prev_up, *up)
+                    (prev_up, *up - 1)
                 }
             };
 
@@ -460,24 +460,26 @@ where
         }
     }
 
-    println!("Dynamic profile");
-    for i in seq1.toposort() {
-        for j in seq2.toposort() {
-            let value = match dp.get(&(Some(i), Some(j))) {
-                Some(value) => format!("{}", value),
-                None => format!("-"),
-            };
+    // println!("Dynamic profile");
+    // for i in seq1.toposort() {
+    //     for j in seq2.toposort() {
+    //         let value = match dp.get(&(Some(i), Some(j))) {
+    //             Some(value) => format!("{}", value),
+    //             None => format!("-"),
+    //         };
 
-            print!("{: >4}", value)
-        }
-        println!()
-    }
+    //         print!("{: >4}", value)
+    //     }
+    //     println!()
+    // }
 
     // backtrack solution
     let mut i = None;
     let mut j = None;
 
     let mut result = Vec::new();
+
+    let final_score = dp.get(&(i, j));
 
     loop {
         let Some((prev_i, prev_j)) = backtrack.get(&(i, j)) else {
@@ -524,11 +526,11 @@ where
 
     result.reverse();
 
-    result
+    (final_score.cloned(), result)
 }
 
 #[test]
-fn basic() {
+fn test() {
     // vec![28,         29,             2, 69, 63, 70, 30, 82, 31, 81, 3],
     // vec![28, 68, 67, 29, 66, 65, 64, 2,                             3],
 
@@ -541,7 +543,9 @@ fn basic() {
         vec![28, 68, 67, 66, 65, 64, 2, 30],
     ];
 
-    let result = partial_order_sequence_matching(&sequences[0], &sequences[1]);
+    let (score, result) = partial_order_sequence_matching(&sequences[0], &sequences[1]);
+
+    println!("Final score: {:?}", score);
 
     for (item, _) in &result {
         match item {
