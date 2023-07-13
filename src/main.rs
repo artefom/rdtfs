@@ -34,8 +34,6 @@ mod rides;
 
 mod sequence_alignment;
 
-mod clustering;
-
 mod poa;
 
 impl<T> gtfs::GtfsStore for T
