@@ -211,7 +211,19 @@ pub fn align<T: Hash + Eq + Clone + Debug + Copy>(seqs: &[&Vec<T>]) -> (Vec<T>, 
     let (greatest_sequence_id, greatest_sequence) =
         unmerged_sequences.swap_remove(greatest_sequence);
 
+    // println!(
+    //     "Adding {:?} to graph, left: {}",
+    //     greatest_sequence,
+    //     unmerged_sequences.len()
+    // );
+
     graph.add(greatest_sequence_id, greatest_sequence);
+
+    // for item in graph.toposort() {
+    //     let info = graph.node_info.get(&item).unwrap();
+    //     print!("{:?} ", info.base);
+    // }
+    // println!();
 
     // Add most fitting sequences on each iteration
     loop {
@@ -228,11 +240,28 @@ pub fn align<T: Hash + Eq + Clone + Debug + Copy>(seqs: &[&Vec<T>]) -> (Vec<T>, 
             })
             .max_by_key(|(seq_id, score)| *score);
 
+        if unmerged_sequences.len() == 1800 {
+            break;
+        };
+
         let Some((best_idx, _)) = best_alignment else {
             break;
         };
         let (best_seq_id, best_seq) = unmerged_sequences.get(best_idx).unwrap();
+
+        // println!(
+        //     "Adding {:?} to graph, left: {}",
+        //     best_seq,
+        //     unmerged_sequences.len()
+        // );
         graph.add(*best_seq_id, best_seq);
+
+        // for item in graph.toposort() {
+        //     let info = graph.node_info.get(&item).unwrap();
+        //     print!("{:?} ", info.base);
+        // }
+        // println!();
+
         unmerged_sequences.swap_remove(best_idx);
     }
 
@@ -276,14 +305,23 @@ where
     }
     println!();
 
+    let mut seen_seq_ids: HashSet<usize> = HashSet::new();
+
     let mut table = HashMap::new();
     for (seq_id, aligment) in alignments.iter().enumerate() {
+        if aligment.len() > 0 {
+            seen_seq_ids.insert(seq_id);
+        }
         for (seq_offset, offset) in aligment.iter().enumerate() {
             table.insert((seq_id, *offset), sequences[seq_id][seq_offset]);
         }
     }
 
     for (seq_id, seq) in sequences.iter().enumerate() {
+        if !seen_seq_ids.contains(&seq_id) {
+            continue;
+        };
+
         for offset in 0..consensus.len() {
             match table.get(&(seq_id, offset)) {
                 Some(value) => {

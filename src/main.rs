@@ -2,7 +2,13 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{fs::OpenOptions, hash::Hash, io::BufReader, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::OpenOptions,
+    hash::Hash,
+    io::BufReader,
+    path::Path,
+};
 
 use binarystore::Partitionable;
 
@@ -19,7 +25,10 @@ use progress::ProgressReader;
 use csv::CsvTableReader;
 
 use crate::{
-    poa::align, poa::print_alignment, progress::progress_style_count, rides::TimetableGrouper,
+    poa::align,
+    poa::print_alignment,
+    progress::progress_style_count,
+    rides::{group_stop_sequences, StopSequence, TimetableGrouper},
 };
 
 mod gtfs;
@@ -35,6 +44,8 @@ mod store;
 mod rides;
 
 mod poa;
+
+mod clustering;
 
 impl<T> gtfs::GtfsStore for T
 where
@@ -275,7 +286,7 @@ fn main() -> Result<()> {
 
     let mut station_ids = KeyStore::default();
 
-    let mut grouper = TimetableGrouper::new();
+    // let mut grouper = TimetableGrouper::new();
 
     let iter = gtfs_partitioned.iter();
     println!("Total number of routes: {}", iter.len());
@@ -283,13 +294,15 @@ fn main() -> Result<()> {
     let mut total_number_rides: usize = 0;
     let mut error_rides: usize = 0;
 
-    // Group rides
+    let mut stop_sequences: HashSet<StopSequence> = HashSet::new();
+
     for ride in gtfs_partitioned
         .iter()
         .progress_with_style(progress_style_count())
         .rides(&mut station_ids)
     {
         total_number_rides += 1;
+
         let ride = match ride {
             Ok(value) => value,
             Err(err) => {
@@ -299,28 +312,93 @@ fn main() -> Result<()> {
             }
         };
 
-        // Add ride to grouper
-        grouper.add_ride(ride);
+        stop_sequences.insert((&ride).into());
     }
 
     println!("Total number of rides: {total_number_rides}, {error_rides} errors");
+    println!("Total number of stop sequences: {}", stop_sequences.len());
 
-    let grouped = grouper.finalize();
+    let stop_sequences = stop_sequences.into_iter().collect_vec();
 
-    for stop_seqs in grouped.mapping {
-        if stop_seqs.len() > 100 {
-            println!("Cluster length is too big: {}", stop_seqs.len());
-            continue;
+    println!("Grouping stop sequences");
+    let assigned_clusters = group_stop_sequences(&stop_sequences);
+
+    let mut cluster_x_stop_sequences: HashMap<usize, Vec<StopSequence>> = HashMap::new();
+
+    for (stop_sequence, assigned_cluster) in stop_sequences.into_iter().zip(assigned_clusters) {
+        match cluster_x_stop_sequences.entry(assigned_cluster) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.get_mut().push(stop_sequence);
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(vec![stop_sequence]);
+            }
         }
-        // println!("Cluster {:?}", stop_seqs);
+    }
 
-        let seq_inner = stop_seqs.iter().map(|x| x.as_ref()).collect_vec();
+    let cluster_x_stop_sequences = cluster_x_stop_sequences
+        .values()
+        .sorted_by_key(|x| x.len())
+        .collect_vec();
 
-        println!("Aligning cluster of size {}", stop_seqs.len());
+    for i in 0..cluster_x_stop_sequences.len() {
+        let cluster = cluster_x_stop_sequences[i];
+        // println!();
+        // println!("Example {i}");
+        // println!("------------------------------");
+        // println!("Cluster {:?}", cluster);
+        // println!();
+
+        let seq_inner = cluster
+            .iter()
+            .map(|x| x.stop_sequence.as_ref())
+            .collect_vec();
+
+        println!("Aligning cluster of size {}", cluster.len());
         let (consensus, alignments) = align(&seq_inner);
 
         poa::print_alignment(seq_inner.as_slice(), consensus, alignments);
     }
+
+    // // Group rides
+    // for ride in gtfs_partitioned
+    //     .iter()
+    //     .progress_with_style(progress_style_count())
+    //     .rides(&mut station_ids)
+    // {
+    //     total_number_rides += 1;
+    //     let ride = match ride {
+    //         Ok(value) => value,
+    //         Err(err) => {
+    //             println!("{:?}", err);
+    //             error_rides += 1;
+    //             continue;
+    //         }
+    //     };
+
+    //     // Add ride to grouper
+    //     grouper.add_ride(ride);
+    // }
+
+    // println!("Total number of rides: {total_number_rides}, {error_rides} errors");
+
+    // let grouped = grouper.finalize();
+
+    // for stop_seqs in grouped.mapping {
+    //     // if stop_seqs.len() > 200 {
+    //     //     println!("Cluster length is too big: {}", stop_seqs.len());
+    //     //     println!("{:?}", stop_seqs);
+    //     //     continue;
+    //     // }
+    //     // println!("Cluster {:?}", stop_seqs);
+
+    //     let seq_inner = stop_seqs.iter().map(|x| x.as_ref()).collect_vec();
+
+    //     println!("Aligning cluster of size {}", stop_seqs.len());
+    //     let (consensus, alignments) = align(&seq_inner);
+
+    //     poa::print_alignment(seq_inner.as_slice(), consensus, alignments);
+    // }
 
     Ok(())
 }

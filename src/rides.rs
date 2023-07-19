@@ -1,3 +1,5 @@
+use indicatif::ProgressIterator;
+use ordered_float::OrderedFloat;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
@@ -48,6 +50,78 @@ pub struct TimetableGrouper {
     station_x_seq: HashMap<StopId, HashSet<usize>>,
 }
 
+struct Matrix<T> {
+    rows: usize,
+    cols: usize,
+    data: Vec<T>,
+}
+
+impl<T: Copy> Matrix<T> {
+    fn new(rows: usize, cols: usize, initial: T) -> Self {
+        Matrix {
+            rows,
+            cols,
+            data: vec![initial; rows * cols],
+        }
+    }
+
+    fn get(&self, row: usize, col: usize) -> T {
+        self.data[row * self.cols + col]
+    }
+
+    fn set(&mut self, row: usize, col: usize, value: T) {
+        self.data[row * self.cols + col] = value;
+    }
+}
+
+pub fn needleman_wunsch<T: PartialEq + Copy>(
+    seq1: &[T],
+    seq2: &[T],
+    match_score: i32,
+    gap_score: i32,
+) -> i32 {
+    let len1 = seq1.len() + 1;
+    let len2 = seq2.len() + 1;
+
+    let mut matrix = Matrix::new(len1, len2, 0);
+
+    for i in 1..len1 {
+        matrix.set(i, 0, i as i32 * gap_score);
+    }
+
+    for j in 1..len2 {
+        matrix.set(0, j, j as i32 * gap_score);
+    }
+
+    for i in 1..len1 {
+        for j in 1..len2 {
+            let score_diag = matrix.get(i - 1, j - 1)
+                + if seq1[i - 1] == seq2[j - 1] {
+                    match_score
+                } else {
+                    gap_score
+                };
+            let score_left = matrix.get(i, j - 1) + gap_score;
+            let score_up = matrix.get(i - 1, j) + gap_score;
+            matrix.set(
+                i,
+                j,
+                std::cmp::max(std::cmp::max(score_diag, score_left), score_up),
+            );
+        }
+    }
+
+    matrix.get(len1 - 1, len2 - 1)
+}
+
+#[test]
+fn test_needleman_wunsch() {
+    let seq1 = vec!['A', 'C', 'C', 'T', 'G'];
+    let seq2 = vec!['A', 'C', 'C', 'B', 'T', 'G'];
+
+    assert_eq!(needleman_wunsch(&seq1, &seq2, 1, -1), 4);
+}
+
 pub struct TimetableGrouped {
     pub mapping: Vec<Vec<StationSeq>>,
 }
@@ -85,16 +159,16 @@ impl TimetableGrouper {
     }
 
     fn distance(&self, seq1: &StationSeq, seq2: &StationSeq) -> f64 {
-        let max_len: u32 = match std::cmp::min(seq1.len(), seq2.len()).try_into() {
+        let max_len: u32 = match std::cmp::max(seq1.len(), seq2.len()).try_into() {
             Ok(value) => value,
             Err(_) => u32::MAX,
         };
 
-        let editions = levenshtein_limit_iter(seq1, seq2, max_len);
+        let matches = needleman_wunsch(seq1, seq2, 10, -1);
 
-        let edited_frac = (editions as f64) / (max_len as f64);
+        let matches_frac = (matches as f64) / 10.0 / (max_len as f64);
 
-        edited_frac
+        matches_frac
     }
 
     /// Merge clusters returning new cluster id
@@ -144,7 +218,7 @@ impl TimetableGrouper {
             // If one of the condidates is exactly equal to our sequence, do nothing
             let dist = self.distance(candidate, &sequence);
 
-            if dist < self.distance_threshold {
+            if dist > self.distance_threshold {
                 related_clusters.insert(cluster_id.clone());
             }
         }
@@ -190,3 +264,119 @@ impl TimetableGrouper {
 }
 
 impl TimetableGrouped {}
+
+#[derive(Debug, Hash, Eq, PartialEq)]
+pub struct StopSequence {
+    pub stop_sequence: Vec<StopId>,
+}
+
+impl From<&Ride> for StopSequence {
+    fn from(value: &Ride) -> Self {
+        let mut stop_sequence = Vec::new();
+
+        for stop in &value.stops {
+            stop_sequence.push(stop.station)
+        }
+
+        StopSequence { stop_sequence }
+    }
+}
+
+struct MatrixIterator {
+    len: usize,
+    current_row: usize,
+    current_column: usize,
+}
+
+impl MatrixIterator {
+    fn new(len: usize) -> Self {
+        MatrixIterator {
+            len,
+            current_row: 0,
+            current_column: 0,
+        }
+    }
+}
+
+impl ExactSizeIterator for MatrixIterator {
+    fn len(&self) -> usize {
+        self.len * self.len
+    }
+}
+
+impl Iterator for MatrixIterator {
+    type Item = (usize, usize);
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len(), Some(self.len()))
+    }
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let result = Some((self.current_row, self.current_column));
+
+        self.current_column += 1;
+        if self.current_column == self.len {
+            self.current_column = 0;
+            self.current_row += 1;
+        }
+
+        if self.current_row == self.len {
+            return None;
+        }
+
+        result
+    }
+}
+
+pub fn group_stop_sequences(stop_seqs: &Vec<StopSequence>) -> Vec<usize> {
+    fn dissimilarity(lhs: &StopSequence, rhs: &StopSequence) -> OrderedFloat<f64> {
+        let max_len: u32 =
+            match std::cmp::max(lhs.stop_sequence.len(), rhs.stop_sequence.len()).try_into() {
+                Ok(value) => value,
+                Err(_) => u32::MAX,
+            };
+
+        let mut matches = needleman_wunsch(&lhs.stop_sequence, &rhs.stop_sequence, 10, -1);
+
+        if matches < 30 {
+            matches = 0;
+        };
+
+        // Similarity metric betwen 0 and 1
+        let mut similarity = (matches as f64) / 10.0 / (max_len as f64);
+        if similarity < 0.0 {
+            similarity = 0.0
+        };
+        assert!(similarity <= 1.0);
+
+        // Dissimilarity as 1 - similarity
+        OrderedFloat(1.0 / (similarity + 0.0001))
+    }
+
+    // Calculate dissimilarity matrix
+    let mut dissimilarity_mat =
+        ndarray::Array2::<OrderedFloat<f64>>::ones((stop_seqs.len(), stop_seqs.len()));
+
+    println!("Calulating dissimilarity matrix");
+
+    let mut n_iterations = 0;
+
+    for (from_id, to_id) in MatrixIterator::new(stop_seqs.len()).progress() {
+        let from = &stop_seqs[from_id];
+        let to = &stop_seqs[to_id];
+
+        dissimilarity_mat[[from_id, to_id]] = dissimilarity(from, to);
+        n_iterations += 1;
+    }
+
+    println!("{:?}", dissimilarity_mat);
+
+    println!("Total number of iterations: {}", n_iterations);
+
+    let mut meds = kmedoids::random_initialization(stop_seqs.len(), 100, &mut rand::thread_rng());
+
+    let (loss, assigned_clusters, n_iter, n_swap): (f64, _, _, _) =
+        kmedoids::fasterpam(&dissimilarity_mat, &mut meds, 50);
+
+    assigned_clusters
+}
