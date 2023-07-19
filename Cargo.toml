@@ -24,6 +24,7 @@ ordered-float = "3.7.0"
 rand = "0.8.5"
 ndarray = "0.15.6"
 kmedoids = "0.4.3"
+by_address = "1.1.0"
 
 
 [profile.release]

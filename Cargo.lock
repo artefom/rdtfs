@@ -178,6 +178,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "by_address"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf8dba2868114ed769a1f2590fc9ae5eb331175b44313b6c9b922f8f7ca813d0"
+
+[[package]]
 name = "bytecount"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1163,6 +1169,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "bio",
+ "by_address",
  "chrono",
  "chrono-tz",
  "env_logger",

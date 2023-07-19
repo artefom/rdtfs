@@ -47,6 +47,8 @@ mod poa;
 
 mod clustering;
 
+mod sequence_index;
+
 impl<T> gtfs::GtfsStore for T
 where
     T: store::FileCollection,
