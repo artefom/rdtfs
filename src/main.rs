@@ -29,6 +29,7 @@ use crate::{
     poa::print_alignment,
     progress::progress_style_count,
     rides::{group_stop_sequences, StopSequence, TimetableGrouper},
+    sequence_index::SequenceIndex,
 };
 
 mod gtfs;
@@ -322,45 +323,66 @@ fn main() -> Result<()> {
 
     let stop_sequences = stop_sequences.into_iter().collect_vec();
 
-    println!("Grouping stop sequences");
-    let assigned_clusters = group_stop_sequences(&stop_sequences);
+    let mut sequence_idx = SequenceIndex::new();
 
-    let mut cluster_x_stop_sequences: HashMap<usize, Vec<StopSequence>> = HashMap::new();
-
-    for (stop_sequence, assigned_cluster) in stop_sequences.into_iter().zip(assigned_clusters) {
-        match cluster_x_stop_sequences.entry(assigned_cluster) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                entry.get_mut().push(stop_sequence);
-            }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(vec![stop_sequence]);
-            }
-        }
+    println!("Indexing trips");
+    for seq in &stop_sequences {
+        sequence_idx.add_sequence(&seq.stop_sequence);
     }
 
-    let cluster_x_stop_sequences = cluster_x_stop_sequences
-        .values()
-        .sorted_by_key(|x| x.len())
-        .collect_vec();
+    // 5, 43, 6, 3, 7, 8, 9, 2, 10
 
-    for i in 0..cluster_x_stop_sequences.len() {
-        let cluster = cluster_x_stop_sequences[i];
-        // println!();
-        // println!("Example {i}");
-        // println!("------------------------------");
-        // println!("Cluster {:?}", cluster);
-        // println!();
+    println!("Indexing done");
 
-        let seq_inner = cluster
-            .iter()
-            .map(|x| x.stop_sequence.as_ref())
-            .collect_vec();
+    let mut similar = Vec::new();
 
-        println!("Aligning cluster of size {}", cluster.len());
-        let (consensus, alignments) = align(&seq_inner);
+    sequence_idx.find_matching(&vec![5, 43, 6, 3, 7, 8, 9, 2, 10], &mut similar);
 
-        poa::print_alignment(seq_inner.as_slice(), consensus, alignments);
-    }
+    println!("Index size: {:?}", sequence_idx.pairs.len());
+
+    println!("Similar sequences: ({}) {:?}", similar.len(), similar);
+
+    // println!("Grouping stop sequences");
+    // let assigned_clusters = group_stop_sequences(&stop_sequences);
+
+    // let mut cluster_x_stop_sequences: HashMap<usize, Vec<StopSequence>> = HashMap::new();
+
+    // for (stop_sequence, assigned_cluster) in stop_sequences.into_iter().zip(assigned_clusters) {
+    //     match cluster_x_stop_sequences.entry(assigned_cluster) {
+    //         std::collections::hash_map::Entry::Occupied(mut entry) => {
+    //             entry.get_mut().push(stop_sequence);
+    //         }
+    //         std::collections::hash_map::Entry::Vacant(entry) => {
+    //             entry.insert(vec![stop_sequence]);
+    //         }
+    //     }
+    // }
+
+    // let cluster_x_stop_sequences = cluster_x_stop_sequences
+    //     .values()
+    //     .sorted_by_key(|x| x.len())
+    //     .collect_vec();
+
+    // for i in 0..cluster_x_stop_sequences.len() {
+    //     let cluster = cluster_x_stop_sequences[i];
+    //     // println!();
+    //     // println!("Example {i}");
+    //     // println!("------------------------------");
+    //     // println!("Cluster {:?}", cluster);
+    //     // println!();
+
+    //     let seq_inner = cluster
+    //         .iter()
+    //         .map(|x| x.stop_sequence.as_ref())
+    //         .collect_vec();
+
+    //     println!("Aligning cluster of size {}", cluster.len());
+    //     let (consensus, alignments) = align(&seq_inner);
+
+    //     poa::print_alignment(seq_inner.as_slice(), consensus, alignments);
+    // }
+
+    // ----------------------------
 
     // // Group rides
     // for ride in gtfs_partitioned
